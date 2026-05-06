@@ -1,55 +1,61 @@
-import os
-import json
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.domain.enums import SuratStatus, UserRole
-from app.models.surat import SuratModel
-from app.models.signature import SignatureModel
-from app.models.letter_template import LetterTemplateModel
+from app.domain.exceptions import (
+    EntityNotFoundError,
+    InvalidStateTransitionError,
+    UnauthorizedError,
+    ValidationError,
+)
+from app.domain.surat import Surat
+from app.domain.signature import Signature
 from app.repositories.surat_repository import SuratRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.letter_template_repository import LetterTemplateRepository
 from app.repositories.signature_repository import SignatureRepository
-from app.repositories.audit_log_repository import AuditLogRepository
-from app.models.audit_log import AuditLogModel
+from app.services.audit_log_service import AuditLogService
 from app.utils.hash_generator import HashGenerator
 from app.utils.qr_generator import QRCodeGenerator
 from app.utils.pdf_generator import PDFGenerator
 
 
 class SuratService:
+    """Orchestration layer for the letter workflow.
+
+    All business rules live in the ``Surat`` domain entity;
+    this service coordinates repositories, external utilities
+    and the audit trail.
+    """
+
     def __init__(self, db: Session):
         self.db = db
         self.surat_repo = SuratRepository(db)
         self.user_repo = UserRepository(db)
         self.template_repo = LetterTemplateRepository(db)
         self.signature_repo = SignatureRepository(db)
-        self.audit_repo = AuditLogRepository(db)
+        self.audit_service = AuditLogService(db)
+
+    # ------------------------------------------------------------------
+    # Template queries
+    # ------------------------------------------------------------------
 
     def get_internal_templates(self) -> List[dict]:
         templates = self.template_repo.get_internal_templates()
-        results: List[dict] = []
-        for template in templates:
-            required_fields: List[str] = []
-            if template.required_fields:
-                try:
-                    parsed = json.loads(template.required_fields)
-                    if isinstance(parsed, list):
-                        required_fields = [str(x) for x in parsed]
-                except json.JSONDecodeError:
-                    required_fields = []
-            results.append(
-                {
-                    "id": template.id,
-                    "name": template.name,
-                    "description": template.description,
-                    "required_fields": required_fields,
-                }
-            )
-        return results
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description,
+                "required_fields": t.required_fields,
+            }
+            for t in templates
+        ]
+
+    # ------------------------------------------------------------------
+    # Letter creation
+    # ------------------------------------------------------------------
 
     def create_internal_letter(
         self,
@@ -58,12 +64,12 @@ class SuratService:
         keperluan: str,
         fields: dict,
         lecturer_ids: Optional[List[int]] = None,
-    ) -> SuratModel:
+    ) -> Surat:
         self._validate_internal_fields(jenis, fields)
 
         mahasiswa = self.user_repo.get_by_id(mahasiswa_id)
         if not mahasiswa:
-            raise ValueError("Mahasiswa tidak ditemukan")
+            raise EntityNotFoundError("Mahasiswa tidak ditemukan")
 
         enriched_fields = {
             "nama": mahasiswa.name,
@@ -80,32 +86,29 @@ class SuratService:
             signature_path=mahasiswa.signature_image_path,
         )
 
-        status = SuratStatus.DRAFT
-        if lecturer_ids:
-            status = SuratStatus.MENUNGGU_TTD_DOSEN
-
-        surat = SuratModel(
+        # Build domain entity
+        surat = Surat(
             mahasiswa_id=mahasiswa_id,
             jenis=jenis,
             keperluan=keperluan,
             is_external=False,
             pdf_path=pdf_path,
-            internal_fields_raw=json.dumps(fields, ensure_ascii=False),
-            status=status,
+            internal_fields=fields,
         )
+
+        # Auto-submit if lecturers are provided
+        if lecturer_ids:
+            surat.submit(has_lecturer_signatures=True)
+
         surat = self.surat_repo.create(surat)
 
         # Create signature placeholders for lecturers
         if lecturer_ids:
             for lid in lecturer_ids:
-                sig = SignatureModel(
-                    surat_id=surat.id,
-                    owner_id=lid,
-                    role=UserRole.DOSEN,
-                )
+                sig = Signature(surat_id=surat.id, owner_id=lid, role=UserRole.DOSEN)
                 self.signature_repo.create(sig)
 
-        self._log_event("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat.id, status.value)
+        self._log("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat)
         return surat
 
     def create_external_letter(
@@ -115,161 +118,163 @@ class SuratService:
         keperluan: str,
         file_path: str,
         lecturer_ids: Optional[List[int]] = None,
-    ) -> SuratModel:
-        status = SuratStatus.DRAFT
-        if lecturer_ids:
-            status = SuratStatus.MENUNGGU_TTD_DOSEN
-
-        surat = SuratModel(
+    ) -> Surat:
+        surat = Surat(
             mahasiswa_id=mahasiswa_id,
             jenis=jenis,
             keperluan=keperluan,
             is_external=True,
             file_path=file_path,
-            status=status,
         )
+
+        if lecturer_ids:
+            surat.submit(has_lecturer_signatures=True)
+
         surat = self.surat_repo.create(surat)
 
         if lecturer_ids:
             for lid in lecturer_ids:
-                sig = SignatureModel(
-                    surat_id=surat.id,
-                    owner_id=lid,
-                    role=UserRole.DOSEN,
-                )
+                sig = Signature(surat_id=surat.id, owner_id=lid, role=UserRole.DOSEN)
                 self.signature_repo.create(sig)
 
-        self._log_event("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat.id, status.value)
+        self._log("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat)
         return surat
 
-    def submit_letter(self, surat_id: int, mahasiswa_id: int) -> SuratModel:
+    # ------------------------------------------------------------------
+    # Workflow transitions
+    # ------------------------------------------------------------------
+
+    def submit_letter(self, surat_id: int, mahasiswa_id: int) -> Surat:
         surat = self._get_surat_or_raise(surat_id)
         if surat.mahasiswa_id != mahasiswa_id:
-            raise PermissionError("Bukan surat Anda")
+            raise UnauthorizedError("Bukan surat Anda")
 
-        # Check if any lecturer signatures are needed
         unsigned = self.signature_repo.get_unsigned_by_surat(surat_id)
-        lecturer_sigs = [s for s in unsigned if s.role == UserRole.DOSEN]
+        has_lecturers = any(s.role == UserRole.DOSEN for s in unsigned)
 
-        if lecturer_sigs:
-            surat.status = SuratStatus.MENUNGGU_TTD_DOSEN
-        else:
-            surat.status = SuratStatus.MENUNGGU_PROSES_ADMIN
-
+        surat.submit(has_lecturer_signatures=has_lecturers)
         surat = self.surat_repo.update(surat)
-        self._log_event("SURAT_SUBMITTED", mahasiswa_id, UserRole.MAHASISWA.value, surat.id, surat.status.value)
+
+        self._log("SURAT_SUBMITTED", mahasiswa_id, UserRole.MAHASISWA.value, surat)
         return surat
 
-    def approve_by_admin(self, surat_id: int, admin_id: int) -> SuratModel:
+    def approve_by_admin(self, surat_id: int, admin_id: int) -> Surat:
         surat = self._get_surat_or_raise(surat_id)
-        if surat.status != SuratStatus.MENUNGGU_PROSES_ADMIN:
-            raise ValueError("Surat tidak dalam status menunggu proses admin")
 
-        # Generate document hash
+        # Generate artefacts
         document_hash = HashGenerator.generate_document_hash(surat.id, surat.mahasiswa_id)
-        surat.document_hash = document_hash
 
-        # Generate QR code
         verification_url = f"/verify/{document_hash}"
         qr_filename = f"qr_{surat.id}.png"
         qr_path = QRCodeGenerator.generate_qr_code(verification_url, qr_filename)
-        surat.qr_path = qr_path
 
-        # Generate final PDF
         source_pdf = surat.pdf_path or surat.file_path or ""
         final_filename = f"final_{surat.id}.pdf"
         signed_images = [
             s.image_path
             for s in self.signature_repo.get_by_surat_id(surat.id)
-            if s.signed_at is not None and s.image_path
+            if s.is_signed() and s.image_path
         ]
         final_pdf_path = PDFGenerator.generate_final_pdf(
-            source_pdf,
-            qr_path,
-            final_filename,
-            signature_paths=signed_images,
+            source_pdf, qr_path, final_filename, signature_paths=signed_images,
         )
-        surat.pdf_path = final_pdf_path
 
-        surat.status = SuratStatus.SELESAI
+        # Domain transition — validates state machine
+        surat.approve(document_hash, qr_path, final_pdf_path)
         surat = self.surat_repo.update(surat)
 
-        self._log_event("SURAT_APPROVED", admin_id, UserRole.ADMIN.value, surat.id, surat.status.value)
+        self._log("SURAT_APPROVED", admin_id, UserRole.ADMIN.value, surat)
         return surat
 
-    def reject_letter(self, surat_id: int, actor_id: int, actor_role: str, reason: str) -> SuratModel:
+    def reject_letter(
+        self, surat_id: int, actor_id: int, actor_role: str, reason: str,
+    ) -> Surat:
         surat = self._get_surat_or_raise(surat_id)
 
-        if not reason or not reason.strip():
-            raise ValueError("Alasan penolakan wajib diisi")
-
+        # Extra guard for dosen rejection
         if actor_role == UserRole.DOSEN.value:
             if surat.status != SuratStatus.MENUNGGU_TTD_DOSEN:
-                raise ValueError("Dosen hanya dapat menolak surat pada status menunggu TTD dosen")
-
+                raise InvalidStateTransitionError(
+                    "Dosen hanya dapat menolak surat pada status menunggu TTD dosen"
+                )
             signatures = self.signature_repo.get_by_surat_id(surat_id)
             is_pending_assignee = any(
-                s.owner_id == actor_id and s.role == UserRole.DOSEN and s.signed_at is None
+                s.owner_id == actor_id
+                and s.role == UserRole.DOSEN
+                and not s.is_signed()
                 for s in signatures
             )
             if not is_pending_assignee:
-                raise ValueError("Surat ini bukan pending tanda tangan Anda")
+                raise UnauthorizedError("Surat ini bukan pending tanda tangan Anda")
 
-        surat.status = SuratStatus.DITOLAK
-        surat.rejection_reason = reason.strip()
+        # Domain transition — validates reason and state machine
+        surat.reject(reason)
         surat = self.surat_repo.update(surat)
 
-        self._log_event("SURAT_REJECTED", actor_id, actor_role, surat.id, surat.status.value)
+        self._log("SURAT_REJECTED", actor_id, actor_role, surat)
         return surat
 
-    def get_surat_by_id(self, surat_id: int) -> Optional[SuratModel]:
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
+
+    def get_surat_by_id(self, surat_id: int) -> Optional[Surat]:
         return self.surat_repo.get_by_id(surat_id)
 
-    def get_surat_by_mahasiswa(self, mahasiswa_id: int) -> List[SuratModel]:
+    def get_surat_with_access_check(
+        self, surat_id: int, user_id: int, user_role: UserRole,
+    ) -> Surat:
+        """Fetch a surat and enforce role-based access control."""
+        surat = self._get_surat_or_raise(surat_id)
+
+        if user_role == UserRole.MAHASISWA and surat.mahasiswa_id != user_id:
+            raise UnauthorizedError("Akses ditolak")
+
+        if user_role == UserRole.DOSEN:
+            signatures = self.signature_repo.get_by_surat_id(surat_id)
+            if not any(s.owner_id == user_id for s in signatures):
+                raise UnauthorizedError("Akses ditolak")
+
+        # ADMIN can access all
+        return surat
+
+    def get_surat_by_mahasiswa(self, mahasiswa_id: int) -> List[Surat]:
         return self.surat_repo.get_by_mahasiswa_id(mahasiswa_id)
 
-    def get_pending_admin(self) -> List[SuratModel]:
+    def get_pending_admin(self) -> List[Surat]:
         return self.surat_repo.get_pending_admin()
 
-    def get_all_surat(self) -> List[SuratModel]:
+    def get_all_surat(self) -> List[Surat]:
         return self.surat_repo.get_all()
 
-    def _get_surat_or_raise(self, surat_id: int) -> SuratModel:
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_surat_or_raise(self, surat_id: int) -> Surat:
         surat = self.surat_repo.get_by_id(surat_id)
         if not surat:
-            raise ValueError("Surat tidak ditemukan")
+            raise EntityNotFoundError("Surat tidak ditemukan")
         return surat
 
     def _validate_internal_fields(self, jenis: str, fields: dict) -> None:
-        template: Optional[LetterTemplateModel] = self.template_repo.get_by_name(jenis)
+        template = self.template_repo.get_by_name(jenis)
         if not template:
-            # Keep backward compatibility for environments where templates
-            # have not been seeded yet.
             if self.template_repo.get_internal_templates():
-                raise ValueError("Jenis surat internal tidak terdaftar")
+                raise ValidationError("Jenis surat internal tidak terdaftar")
             return
 
-        required_fields: List[str] = []
-        if template.required_fields:
-            try:
-                parsed = json.loads(template.required_fields)
-                if isinstance(parsed, list):
-                    required_fields = [str(x) for x in parsed]
-            except json.JSONDecodeError:
-                required_fields = []
+        # Delegate validation to domain entity
+        invalid = template.validate_fields(fields)
+        if invalid:
+            raise ValidationError(f"Field wajib belum diisi: {', '.join(invalid)}")
 
-        for key in required_fields:
-            value = fields.get(key)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"Field '{key}' wajib diisi")
-
-    def _log_event(self, event: str, actor_id: int, actor_role: str, surat_id: int, status: str):
-        log = AuditLogModel(
+    def _log(self, event: str, actor_id: int, actor_role: str, surat: Surat) -> None:
+        self.audit_service.log_event(
             event_name=event,
             actor_id=actor_id,
             actor_role=actor_role,
             target_type="surat",
-            target_id=surat_id,
-            status=status,
+            target_id=surat.id,
+            status=surat.status.value,
         )
-        self.audit_repo.create(log)

@@ -5,6 +5,7 @@ from typing import Set
 from fastapi import HTTPException, UploadFile, status
 
 from app.config import settings
+from app.domain.exceptions import InternalError
 
 ALLOWED_PDF_EXTENSIONS: Set[str] = {".pdf"}
 ALLOWED_IMAGE_EXTENSIONS: Set[str] = {".png", ".jpg", ".jpeg"}
@@ -42,7 +43,10 @@ def _validate_upload(
             detail=f"Tipe MIME tidak diizinkan: {content_type}",
         )
 
-    data = file.file.read()
+    try:
+        data = file.file.read()
+    except OSError as exc:
+        raise InternalError("Gagal membaca file upload") from exc
     if len(data) > max_size:
         max_mb = max_size / (1024 * 1024)
         raise HTTPException(
@@ -53,19 +57,41 @@ def _validate_upload(
     return data
 
 
+def _sanitize_prefix(prefix: str) -> str:
+    safe = "".join(ch for ch in prefix if ch.isalnum() or ch in {"_", "-"})
+    return safe or "file"
+
+
+def _safe_subdir(subdir: str) -> str:
+    base_dir = os.path.abspath(settings.UPLOAD_DIR)
+    target_dir = os.path.abspath(os.path.join(base_dir, subdir))
+    if target_dir != base_dir and not target_dir.startswith(base_dir + os.sep):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direktori upload tidak valid",
+        )
+    return os.path.relpath(target_dir, base_dir)
+
+
 def _safe_filename(prefix: str, ext: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex}{ext}"
+    return f"{_sanitize_prefix(prefix)}_{uuid.uuid4().hex}{ext}"
 
 
 def save_pdf_upload(file: UploadFile, prefix: str, subdir: str = "external") -> str:
     data = _validate_upload(file, ALLOWED_PDF_EXTENSIONS, ALLOWED_PDF_MIMES, MAX_PDF_SIZE)
     ext = _get_extension(file.filename)
-    upload_dir = os.path.join(settings.UPLOAD_DIR, subdir)
+    safe_subdir = _safe_subdir(subdir)
+    upload_dir = os.path.join(settings.UPLOAD_DIR, safe_subdir)
     os.makedirs(upload_dir, exist_ok=True)
     filename = _safe_filename(prefix, ext)
     filepath = os.path.join(upload_dir, filename)
-    with open(filepath, "wb") as f:
-        f.write(data)
+    try:
+        with open(filepath, "wb") as f:
+            f.write(data)
+    except OSError as exc:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise InternalError("Gagal menyimpan file upload") from exc
     return filepath
 
 
@@ -76,6 +102,11 @@ def save_signature_upload(file: UploadFile, prefix: str) -> str:
     os.makedirs(upload_dir, exist_ok=True)
     filename = _safe_filename(prefix, ext)
     filepath = os.path.join(upload_dir, filename)
-    with open(filepath, "wb") as f:
-        f.write(data)
+    try:
+        with open(filepath, "wb") as f:
+            f.write(data)
+    except OSError as exc:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise InternalError("Gagal menyimpan file upload") from exc
     return filepath

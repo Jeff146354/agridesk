@@ -1,6 +1,8 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getErrorMessage } from '../utils/error';
+import { motion } from 'framer-motion';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -22,93 +24,174 @@ export default function RegisterPage() {
       await register(payload);
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registrasi gagal. Coba lagi dengan data yang berbeda.');
+      setError(getErrorMessage(err, 'Registrasi gagal. Coba lagi dengan data yang berbeda.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-green-500">
-          Buat Akun Baru
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Sudah punya akun?{' '}
-          <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500 transition-colors">
-            Sign in sekarang
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="min-h-screen flex flex-col bg-ivory text-primary font-sans"
+    >
+      {/* Header Panel */}
+      <header className="flex justify-between items-center p-6 lg:px-12 border-b border-sepia-200">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-primary text-white flex items-center justify-center font-serif text-lg font-bold rounded-sm">A</div>
+          <div>
+            <h1 className="font-serif font-bold text-lg leading-none">Agridesk</h1>
+            <p className="text-[10px] tracking-widest text-primary/60 mt-0.5 uppercase">Ilmu Komputer</p>
+          </div>
+        </div>
+        <div className="text-xs sm:text-sm text-primary/70 text-right">
+          <span className="hidden sm:inline">Sudah punya akun? </span>
+          <Link to="/login" className="font-medium text-primary hover:text-primary-dark underline underline-offset-4 decoration-primary/30">
+            Masuk di sini
           </Link>
-        </p>
-      </div>
+        </div>
+      </header>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-2xl sm:rounded-xl sm:px-10 border border-gray-100">
-          <form className="space-y-5" onSubmit={handleSubmit}>
-            {error && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
-                <p className="text-sm text-red-700 font-medium">{error}</p>
-              </div>
-            )}
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Nama Lengkap</label>
-              <div className="mt-1">
-                <input required value={form.name} onChange={set('name')} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors" placeholder="John Doe" />
-              </div>
+      {/* Content Wrapper */}
+      <div className="flex-1 flex flex-col lg:flex-row">
+        {/* Left Panel - Branding */}
+        <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 sm:p-12 lg:p-24 border-b lg:border-b-0 lg:border-r border-sepia-200 order-2 lg:order-1">
+          <div className="max-w-md mx-auto lg:mx-0">
+            <p className="text-xs tracking-widest text-primary/50 uppercase mb-8 hidden lg:block">Jilid 01 &middot; 2026</p>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif leading-tight mb-4 lg:mb-6">
+              Mulai kelola surat,<br />
+              <span className="italic">lebih</span> terstruktur.
+            </h2>
+            <p className="text-sm leading-relaxed text-primary/80 mb-8 lg:mb-12">
+              Bergabunglah dengan ekosistem administrasi Ilmu Komputer. Buat akun Anda sekarang untuk mempercepat proses persuratan akademik tanpa kendala birokrasi manual.
+            </p>
+
+            <div className="mt-12 hidden lg:block">
+              <p className="text-xs italic text-primary/60">
+                "Kerapian sistem berawal dari data individu yang tertata." <br />
+                <span className="not-italic opacity-75">— Administrator</span>
+              </p>
             </div>
+          </div>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <div className="mt-1">
-                <input type="email" required value={form.email} onChange={set('email')} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors" placeholder="john@example.com" />
+        {/* Right Panel - Register Form */}
+        <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 sm:p-12 lg:p-24 bg-ivory order-1 lg:order-2">
+          <div className="w-full max-w-sm mx-auto">
+            <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Daftar &middot; Pengguna Baru</p>
+            <h2 className="text-3xl sm:text-4xl font-serif mb-4">Buat akun Anda.</h2>
+            <p className="text-sm text-primary/70 mb-8">
+              Lengkapi formulir di bawah ini dengan identitas akademik Anda yang sah.
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && (
+                <div className="bg-red-50/50 border border-red-200 text-red-700 px-4 py-3 text-sm rounded-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                  Nama Lengkap
+                </label>
+                <input
+                  required
+                  value={form.name}
+                  onChange={set('name')}
+                  className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
+                  placeholder="John Doe"
+                />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
-              <div className="mt-1">
-                <input type="password" required value={form.password} onChange={set('password')} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors" placeholder="" />
+              <div>
+                <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={form.email}
+                  onChange={set('email')}
+                  className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
+                  placeholder="john@example.com"
+                />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Peran Pengguna</label>
-              <div className="mt-1">
-                <select value={form.role} onChange={set('role')} className="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors cursor-pointer">
+              <div>
+                <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                  Kata Sandi
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={form.password}
+                  onChange={set('password')}
+                  className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                  Peran Pengguna
+                </label>
+                <select
+                  value={form.role}
+                  onChange={set('role')}
+                  className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm cursor-pointer"
+                >
                   <option value="MAHASISWA">Mahasiswa</option>
                   <option value="DOSEN">Dosen</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
-            </div>
 
-            {form.role === 'MAHASISWA' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700">NIM</label>
-                <div className="mt-1">
-                  <input required value={form.nim} onChange={set('nim')} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors" placeholder="123456789" />
+              {form.role === 'MAHASISWA' && (
+                <div>
+                  <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                    NIM
+                  </label>
+                  <input
+                    required
+                    value={form.nim}
+                    onChange={set('nim')}
+                    className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
+                    placeholder="G6xxxxxxxxx"
+                  />
                 </div>
-              </div>
-            )}
-            
-            {form.role !== 'MAHASISWA' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700">NIP</label>
-                <div className="mt-1">
-                  <input required value={form.nip} onChange={set('nip')} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors" placeholder="987654321" />
-                </div>
-              </div>
-            )}
+              )}
 
-            <div className="pt-2">
-              <button disabled={loading} type="submit" className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                {loading ? 'Memproses...' : 'Register'}
-              </button>
-            </div>
-          </form>
+              {form.role !== 'MAHASISWA' && (
+                <div>
+                  <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
+                    NIP
+                  </label>
+                  <input
+                    required
+                    value={form.nip}
+                    onChange={set('nip')}
+                    className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
+                    placeholder="1980xxxxxxxxxxxxxx"
+                  />
+                </div>
+              )}
+
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-primary text-white text-sm font-medium hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-ivory rounded-sm transition-all disabled:opacity-70"
+                >
+                  {loading ? 'Memproses...' : 'Daftar Sekarang'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

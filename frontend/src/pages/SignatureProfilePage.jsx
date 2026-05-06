@@ -1,6 +1,7 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getErrorMessage } from '../utils/error';
 
 export default function SignatureProfilePage() {
   const { user } = useAuth();
@@ -11,6 +12,8 @@ export default function SignatureProfilePage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [signatureHash, setSignatureHash] = useState('');
+  const [validUntil, setValidUntil] = useState('');
 
   const loadSignatureProfile = async () => {
     try {
@@ -21,6 +24,14 @@ export default function SignatureProfilePage() {
         setPreviewUrl('');
         return;
       }
+      
+      const hashText = res.data?.signature_hash || '';
+      setSignatureHash(hashText ? `${hashText.substring(0, 4)}...${hashText.substring(hashText.length - 4)}` : '');
+      
+      const dateUpdated = res.data?.updated_at ? new Date(res.data.updated_at) : new Date();
+      dateUpdated.setFullYear(dateUpdated.getFullYear() + 1);
+      setValidUntil(dateUpdated.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }));
+
       const imgRes = await api.get('/api/signatures/me/image', {
         responseType: 'blob',
         params: { t: Date.now() },
@@ -53,15 +64,22 @@ export default function SignatureProfilePage() {
   const getPoint = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
+    
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    let clientX, clientY;
     if ('touches' in e && e.touches.length > 0) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      };
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
     }
+
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
     };
   };
 
@@ -75,11 +93,11 @@ export default function SignatureProfilePage() {
 
   const draw = (e) => {
     if (!drawingRef.current) return;
-    if (e.cancelable) e.preventDefault(); // Prevent scrolling on touch
+    if (e.cancelable) e.preventDefault();
     const ctx = canvasRef.current.getContext('2d');
     const { x, y } = getPoint(e);
     ctx.lineTo(x, y);
-    ctx.strokeStyle = '#1e3a8a';
+    ctx.strokeStyle = '#1a2e26'; // primary color
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -110,96 +128,156 @@ export default function SignatureProfilePage() {
       form.append('file', blob, 'signature.png');
       await api.post('/api/signatures/me', form);
       await loadSignatureProfile();
-      setMessage('Tanda tangan berhasil disimpan. Anda kini dapat langsung menandatangani dokumen.');
+      setMessage('Tanda tangan berhasil disimpan dalam profil Anda.');
     } catch (err) {
       setError(true);
-      setMessage(err.response?.data?.detail || err.message || 'Gagal menyimpan tanda tangan');
+      setMessage(getErrorMessage(err, 'Gagal menyimpan tanda tangan'));
     } finally {
       setSaving(false);
     }
   };
 
+  // Remove placeholder logic, we use real state variables now
+  const certHash = signatureHash || "-";
+  const certExpiry = validUntil || "-";
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 sm:p-8 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Profil Tanda Tangan</h2>
-              <p className="mt-1 text-sm text-gray-500">Kelola tanda tangan digital untuk keperluan administrasi.</p>
-            </div>
-            <span className={"inline-flex items-center px-3 py-1 rounded-full text-sm font-medium " + (hasSaved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800')}>
-              {hasSaved ? 'Tersimpan' : 'Belum Tersimpan'}
-            </span>
-          </div>
-        </div>
-
-        <div className="p-6 sm:p-8 bg-gray-50/50">
-          <div className="max-w-xl mx-auto">
-            <label className="block text-sm font-medium text-gray-700 mb-3 text-center">Gambar Tanda Tangan Anda Disini</label>
-            <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl overflow-hidden shadow-inner relative touch-none">
-              <canvas
-                ref={canvasRef}
-                width={600}
-                height={200}
-                className="w-full h-auto cursor-crosshair bg-white"
-                onMouseDown={startDraw}
-                onMouseMove={draw}
-                onMouseUp={endDraw}
-                onMouseLeave={endDraw}
-                onTouchStart={startDraw}
-                onTouchMove={draw}
-                onTouchEnd={endDraw}
-              />
-              <div className="absolute bottom-2 left-2 text-xs text-gray-400 pointer-events-none select-none">
-                Gunakan mouse atau sentuhan
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-              <button 
-                type="button" 
-                className="inline-flex justify-center items-center px-5 py-2.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                onClick={clearCanvas}
-              >
-                <svg className="-ml-1 mr-2 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                Hapus
-              </button>
-              <button 
-                type="button" 
-                className="inline-flex justify-center items-center px-5 py-2.5 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
-                onClick={saveSignature} 
-                disabled={saving}
-              >
-                {saving ? (
-                  <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Menyimpan...</>
-                ) : (
-                  <><svg className="-ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Simpan Profil</>
-                )}
-              </button>
-            </div>
-
-            {message && (
-              <div className={"mt-4 p-3 rounded-md text-sm text-center " + (error ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-green-50 text-green-700 border border-green-100')}>
-                {message}
-              </div>
-            )}
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="mb-12">
+        <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Profil &middot; Tanda Tangan</p>
+        <div className="max-w-2xl">
+          <h1 className="text-4xl font-serif text-primary mb-3">
+            Tanda tangan <span className="italic">resmi</span> Anda.
+          </h1>
+          <p className="text-sm text-primary/70 leading-relaxed">
+            Goresan ini akan tertaut pada setiap surat yang Anda setujui. Terenkripsi dengan sertifikat institusi dan tercatat dalam arsip audit.
+          </p>
         </div>
       </div>
 
-      {previewUrl && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 bg-gray-50">
-            <h3 className="text-sm font-medium text-gray-900">Preview Tanda Tangan Tersertifikasi</h3>
-          </div>
-          <div className="p-6 flex justify-center bg-white">
-            <div className="border border-gray-200 rounded-lg p-2 bg-gray-50 shadow-inner inline-block">
-              <img src={previewUrl} alt="Preview tanda tangan" className="max-h-32 object-contain" />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        
+        {/* Left Column - Canvas */}
+        <div className="lg:col-span-3">
+          <div className="bg-ivory border border-sepia-200 rounded-sm">
+            <div className="p-6 border-b border-sepia-200 flex justify-between items-start sm:items-center bg-ivory/30">
+              <div>
+                <h3 className="text-base font-serif text-primary">Kanvas Goresan</h3>
+                <p className="text-xs text-primary/60 mt-1">Tulis tanda tangan Anda secara alami.</p>
+              </div>
+            </div>
+
+            <div className="p-6 sm:p-8">
+              <div className="bg-white border border-sepia-200 rounded-sm relative touch-none group">
+                <canvas
+                  ref={canvasRef}
+                  width={800}
+                  height={300}
+                  className="w-full h-auto cursor-crosshair"
+                  onMouseDown={startDraw}
+                  onMouseMove={draw}
+                  onMouseUp={endDraw}
+                  onMouseLeave={endDraw}
+                  onTouchStart={startDraw}
+                  onTouchMove={draw}
+                  onTouchEnd={endDraw}
+                />
+                
+                {/* Decorative Elements */}
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                  <span className="text-2xl font-serif italic text-sepia-200/60 transition-opacity group-hover:opacity-0">Tanda tangan di sini</span>
+                </div>
+                <div className="absolute bottom-4 left-4 text-[10px] font-mono text-primary/30 pointer-events-none">
+                  A4 &middot; 210 &times; 74 mm
+                </div>
+                <div className="absolute bottom-4 right-4 text-[10px] tracking-widest uppercase text-primary/30 pointer-events-none border-b border-primary/20 pb-0.5">
+                  Garis Dasar
+                </div>
+              </div>
+
+              {message && (
+                <div className={`mt-6 p-4 rounded-sm text-sm ${error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                  {message}
+                </div>
+              )}
+
+              <div className="mt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <p className="text-xs text-primary/50 text-center sm:text-left">
+                  Anda dapat memperbarui tanda tangan kapan saja.<br />
+                  Pastikan goresan terlihat jelas.
+                </p>
+                <div className="flex items-center gap-4">
+                  <button 
+                    type="button" 
+                    onClick={clearCanvas}
+                    className="text-sm font-medium text-primary hover:text-primary-dark transition-colors"
+                  >
+                    Ulang
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={saveSignature}
+                    disabled={saving}
+                    className="px-6 py-2.5 bg-primary text-white text-sm font-medium hover:bg-primary-dark rounded-sm transition-colors disabled:opacity-70"
+                  >
+                    {saving ? 'Menyimpan...' : 'Simpan Goresan'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      )}
+
+        {/* Right Column - Preview & Security */}
+        <div className="lg:col-span-2 space-y-8">
+          
+          <div className="bg-white border border-sepia-200 rounded-sm">
+            <div className="p-6 border-b border-sepia-200 flex justify-between items-center bg-ivory/30">
+              <h3 className="text-base font-serif text-primary">Pratinjau Tersimpan</h3>
+              <div className="flex items-center gap-2 text-[10px] tracking-widest text-primary/60 uppercase">
+                {hasSaved ? (
+                  <><span className="w-1.5 h-1.5 rounded-full bg-green-600"></span> Aktif</>
+                ) : (
+                  <><span className="w-1.5 h-1.5 rounded-full bg-red-600"></span> Kosong</>
+                )}
+              </div>
+            </div>
+            <div className="p-6">
+              <div className="bg-ivory border border-sepia-200 rounded-sm p-4 h-40 flex items-center justify-center mb-6">
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Preview tanda tangan" className="max-h-32 object-contain filter contrast-125" />
+                ) : (
+                  <span className="text-sm text-primary/40 italic font-serif">Belum ada tanda tangan</span>
+                )}
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between text-xs">
+                  <span className="text-primary/60">Disertifikasi oleh</span>
+                  <span className="text-primary font-medium font-mono">Agridesk Secure Inc.</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-primary/60">Sidik pasti (hash)</span>
+                  <span className="text-primary font-mono">{certHash}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-primary/60">Berlaku hingga</span>
+                  <span className="text-primary font-medium">{certExpiry}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-ivory border border-sepia-200 rounded-sm p-6">
+            <h3 className="text-sm font-bold tracking-widest text-primary/70 uppercase mb-3">Catatan Keamanan</h3>
+            <p className="text-xs text-primary/70 leading-relaxed">
+              Tanda tangan Anda hanya digunakan pada surat yang Anda setujui secara eksplisit. Setiap penempelan tercatat dalam jejak audit dan tidak dapat disalin oleh pihak lain secara independen.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
     </div>
   );
 }

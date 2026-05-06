@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import api from '../api';
 
 const STATUS_STYLE = {
-  MENUNGGU_TTD: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  SUDAH_TTD: 'bg-green-100 text-green-800 border-green-200',
-  DITOLAK: 'bg-red-100 text-red-800 border-red-200',
+  MENUNGGU_TTD: 'bg-ivory-dark text-primary border-sepia-200',
+  SUDAH_TTD: 'bg-primary/5 text-primary border-primary/20',
+  DITOLAK: 'bg-red-50 text-red-900 border-red-200',
 };
 
 export default function DosenAllSuratPage() {
@@ -13,12 +13,10 @@ export default function DosenAllSuratPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [sortBy, setSortBy] = useState('surat_desc');
 
   const resetFilters = () => {
     setSearch('');
     setStatusFilter('ALL');
-    setSortBy('surat_desc');
   };
 
   useEffect(() => {
@@ -70,136 +68,156 @@ export default function DosenAllSuratPage() {
 
     if (keyword) {
       items = items.filter((item) => {
-        const haystack = [item.surat_jenis, item.mahasiswa_name, String(item.surat_id)]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
+        const haystack = [item.surat_jenis, item.mahasiswa_name, String(item.surat_id)].join(' ').toLowerCase();
         return haystack.includes(keyword);
       });
     }
 
-    items.sort((a, b) => {
-      if (sortBy === 'surat_asc') return Number(a.surat_id || 0) - Number(b.surat_id || 0);
-      if (sortBy === 'jenis_asc') return String(a.surat_jenis || '').localeCompare(String(b.surat_jenis || ''), 'id');
-      if (sortBy === 'status_asc') return String(a.statusLabel || '').localeCompare(String(b.statusLabel || ''), 'id');
-      return Number(b.surat_id || 0) - Number(a.surat_id || 0);
-    });
-
     return items;
-  }, [rows, search, statusFilter, sortBy]);
+  }, [rows, search, statusFilter]);
 
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-pulse flex space-x-4">
+          <div className="h-12 w-12 bg-sepia-200 rounded-sm"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-gray-200 gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 border-l-4 border-blue-500 pl-3">Semua Surat Dosen</h2>
-          <p className="mt-1 text-sm text-gray-500 pl-3">Rekap seluruh surat yang pernah menjadi tugas Anda.</p>
-        </div>
-        <Link to="/dashboard/dosen" className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
-          Kembali ke Pending
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-100 rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Menunggu TTD</div>
-          <div className="text-2xl font-bold text-yellow-700 mt-1">{summary.pending}</div>
-        </div>
-        <div className="bg-white border border-gray-100 rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Sudah TTD</div>
-          <div className="text-2xl font-bold text-green-700 mt-1">{summary.signed}</div>
-        </div>
-        <div className="bg-white border border-gray-100 rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Ditolak</div>
-          <div className="text-2xl font-bold text-red-700 mt-1">{summary.rejected}</div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="mb-12">
+        <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Arsip &middot; Tugas Dosen</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl font-serif text-primary mb-3">
+              Riwayat <span className="italic">penugasan.</span>
+            </h1>
+            <p className="text-sm text-primary/70 leading-relaxed">
+              Catatan lengkap seluruh surat yang pernah melewati meja Anda. Baik yang sudah ditandatangani maupun yang ditolak.
+            </p>
+          </div>
+          <Link to="/dashboard/dosen" className="shrink-0 px-6 py-3 border border-sepia-200 text-primary hover:border-primary transition-colors text-sm font-medium rounded-sm bg-ivory">
+            Ke Antrean Pending
+          </Link>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari jenis surat, mahasiswa, ID surat..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="MENUNGGU_TTD">Menunggu TTD</option>
-          <option value="SUDAH_TTD">Sudah TTD</option>
-          <option value="DITOLAK">Ditolak</option>
-        </select>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="surat_desc">Urutkan: ID Surat Terbaru</option>
-          <option value="surat_asc">Urutkan: ID Surat Terlama</option>
-          <option value="jenis_asc">Urutkan: Jenis (A-Z)</option>
-          <option value="status_asc">Urutkan: Status</option>
-        </select>
-        <button
-          type="button"
-          onClick={resetFilters}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-        >
-          Reset Filter
-        </button>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-sepia-200 rounded-sm bg-white mb-12">
+        <div className="p-8 border-b md:border-b-0 md:border-r border-sepia-200 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-primary/30"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Menunggu TTD</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(summary.pending).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
+        <div className="p-8 border-b md:border-b-0 md:border-r border-sepia-200 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-green-700"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Sudah TTD</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(summary.signed).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
+        <div className="p-8 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-red-700"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Ditolak</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(summary.rejected).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
       </div>
 
-      <div className="bg-white shadow-sm border border-gray-100 rounded-lg overflow-hidden">
+      {/* Table Section */}
+      <div className="bg-white border border-sepia-200 rounded-sm">
+        <div className="p-6 border-b border-sepia-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-serif text-primary">Seluruh Catatan</h3>
+            <p className="text-xs text-primary/60 mt-1">Diurutkan dari yang terbaru. Klik baris untuk melihat detail.</p>
+          </div>
+          <div className="w-full md:w-auto flex items-center gap-3">
+            <div className="relative w-full md:w-64">
+              <svg className="absolute left-3 top-2.5 w-4 h-4 text-primary/40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari surat, pemohon..."
+                className="w-full pl-9 pr-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+              />
+            </div>
+            <button onClick={resetFilters} className="text-xs font-medium text-primary hover:text-primary-dark whitespace-nowrap">
+              Setel ulang
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Chips */}
+        <div className="px-6 py-4 border-b border-sepia-200 flex flex-wrap gap-2">
+          {['ALL', 'SUDAH_TTD', 'DITOLAK', 'MENUNGGU_TTD'].map(filter => (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                statusFilter === filter 
+                  ? 'bg-primary text-white border-primary' 
+                  : 'bg-transparent text-primary/70 border-sepia-200 hover:border-primary/40'
+              }`}
+            >
+              {filter === 'ALL' ? 'Semua' : filter === 'SUDAH_TTD' ? 'Sudah TTD' : filter === 'DITOLAK' ? 'Ditolak' : 'Menunggu'}
+            </button>
+          ))}
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Surat</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Mahasiswa</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Waktu</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi</th>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-ivory border-b border-sepia-200">
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Kode</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Surat</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Pemohon</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Status</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Waktu Update</th>
+                <th className="py-4 px-6 text-right text-[10px] font-medium tracking-widest text-primary/50 uppercase">Aksi</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-sepia-200">
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-10 text-center text-sm text-gray-500">Tidak ada data yang cocok dengan filter.</td>
-                </tr>
-              ) : visibleRows.map((sig) => (
-                <tr key={sig.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{sig.surat_jenis || '-'}</div>
-                    <div className="text-xs text-gray-500">ID Surat: #{sig.surat_id}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{sig.mahasiswa_name || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${STATUS_STYLE[sig.statusLabel]}`}>
-                      {sig.statusLabel === 'MENUNGGU_TTD' ? 'Menunggu TTD' : sig.statusLabel === 'SUDAH_TTD' ? 'Sudah TTD' : 'Ditolak'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {sig.signed_at ? new Date(sig.signed_at).toLocaleString('id-ID') : (sig.statusLabel === 'DITOLAK' ? 'Ditolak' : '-')}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex justify-end space-x-2">
-                      <Link to={`/surat/${sig.surat_id}/pdf`} className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors">PDF</Link>
-                      <Link to={`/surat/${sig.surat_id}`} className="text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded transition-colors">Detail</Link>
-                    </div>
+                  <td colSpan="6" className="py-12 text-center text-sm text-primary/50 italic">
+                    Tidak ada catatan yang ditemukan.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                visibleRows.map((sig) => (
+                  <tr key={sig.id} className="hover:bg-ivory/50 transition-colors group">
+                    <td className="py-5 px-6 text-xs text-primary/60 font-mono">
+                      SR-2026-{String(sig.surat_id).padStart(4, '0')}
+                    </td>
+                    <td className="py-5 px-6">
+                      <p className="text-sm font-medium text-primary">{sig.surat_jenis || '-'}</p>
+                    </td>
+                    <td className="py-5 px-6">
+                      <p className="text-sm font-medium text-primary">{sig.mahasiswa_name || '-'}</p>
+                    </td>
+                    <td className="py-5 px-6">
+                      <span className={`inline-block px-2.5 py-1 text-[10px] font-medium tracking-wider uppercase border rounded-sm ${STATUS_STYLE[sig.statusLabel]}`}>
+                        {sig.statusLabel === 'MENUNGGU_TTD' ? 'Menunggu' : sig.statusLabel === 'SUDAH_TTD' ? 'Selesai TTD' : 'Ditolak'}
+                      </span>
+                    </td>
+                    <td className="py-5 px-6 text-xs text-primary/70">
+                      {sig.signed_at ? new Date(sig.signed_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '-'}
+                    </td>
+                    <td className="py-5 px-6 text-right">
+                      <Link to={`/surat/${sig.surat_id}`} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-white shadow-sm">
+                        Detail
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

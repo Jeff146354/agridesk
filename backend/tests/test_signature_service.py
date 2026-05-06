@@ -1,6 +1,7 @@
 import pytest
 
 from app.domain.enums import UserRole, SuratStatus
+from app.domain.exceptions import UnauthorizedError, ValidationError
 from app.models.user import UserModel
 from app.models.surat import SuratModel
 from app.models.signature import SignatureModel
@@ -95,7 +96,7 @@ class TestSignatureServiceLecturer:
         pending = sig_repo.get_pending_for_lecturer(lecturer.id)
 
         service = SignatureService(db)
-        with pytest.raises(PermissionError, match="Bukan tanda tangan Anda"):
+        with pytest.raises(UnauthorizedError, match="Bukan tanda tangan Anda"):
             service.sign_by_lecturer(pending[0].id, other.id, "/sig.png")
 
     def test_sign_already_signed_raises(self, db):
@@ -109,7 +110,7 @@ class TestSignatureServiceLecturer:
         service = SignatureService(db)
         service.sign_by_lecturer(pending[0].id, lecturer.id, "/sig.png")
 
-        with pytest.raises(ValueError, match="Sudah ditandatangani"):
+        with pytest.raises(ValidationError, match="Sudah ditandatangani"):
             service.sign_by_lecturer(pending[0].id, lecturer.id, "/sig2.png")
 
 

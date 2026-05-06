@@ -1,12 +1,15 @@
 from sqlalchemy.orm import Session
 
-from app.models.user import UserModel
+from app.domain.enums import UserRole
+from app.domain.exceptions import DuplicateEntityError, EntityNotFoundError, ValidationError
+from app.domain.user import User
 from app.repositories.user_repository import UserRepository
 from app.utils.security import hash_password, verify_password, create_access_token
-from app.domain.enums import UserRole
 
 
 class AuthService:
+    """Handles registration, login and user profile operations."""
+
     def __init__(self, db: Session):
         self.user_repo = UserRepository(db)
 
@@ -18,19 +21,18 @@ class AuthService:
         role: UserRole,
         nim: str | None = None,
         nip: str | None = None,
-    ) -> UserModel:
-        existing = self.user_repo.get_by_email(email)
-        if existing:
-            raise ValueError("Email sudah terdaftar")
+    ) -> User:
+        if self.user_repo.get_by_email(email):
+            raise DuplicateEntityError("Email sudah terdaftar")
 
         if role == UserRole.MAHASISWA and nim:
             if self.user_repo.get_by_nim(nim):
-                raise ValueError("NIM sudah terdaftar")
+                raise DuplicateEntityError("NIM sudah terdaftar")
         if role in (UserRole.DOSEN, UserRole.ADMIN) and nip:
             if self.user_repo.get_by_nip(nip):
-                raise ValueError("NIP sudah terdaftar")
+                raise DuplicateEntityError("NIP sudah terdaftar")
 
-        user = UserModel(
+        user = User(
             name=name,
             email=email,
             password_hash=hash_password(password),
@@ -43,7 +45,7 @@ class AuthService:
     def login(self, email: str, password: str) -> dict:
         user = self.user_repo.get_by_email(email)
         if not user or not verify_password(password, user.password_hash):
-            raise ValueError("Email atau password salah")
+            raise ValidationError("Email atau password salah")
 
         # Keep JWT subject as string for standards-compliant decoding.
         token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
@@ -62,10 +64,24 @@ class AuthService:
         lecturers = self.user_repo.search_lecturers(query, limit=limit)
         return [
             {
-                "id": lecturer.id,
-                "name": lecturer.name,
-                "nip": lecturer.nip,
-                "email": lecturer.email,
+                "id": l.id,
+                "name": l.name,
+                "nip": l.nip,
+                "email": l.email,
             }
-            for lecturer in lecturers
+            for l in lecturers
         ]
+
+    def update_signature_image(self, user_id: int, image_path: str) -> User:
+        """Update the saved signature image for a user (any role)."""
+        user = self.user_repo.get_by_id(user_id)
+        if not user:
+            raise EntityNotFoundError("User tidak ditemukan")
+        user.update_signature_image(image_path)
+        return self.user_repo.update(user)
+
+    def get_user_by_id(self, user_id: int) -> User:
+        user = self.user_repo.get_by_id(user_id)
+        if not user:
+            raise EntityNotFoundError("User tidak ditemukan")
+        return user

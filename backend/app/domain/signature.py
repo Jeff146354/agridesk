@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
-import hashlib
-import uuid
 
 from app.domain.enums import UserRole
+from app.domain.exceptions import UnauthorizedError, ValidationError
 
 
 @dataclass
 class Signature:
+    """Domain entity representing a signature on a letter."""
+
     id: Optional[int] = None
     surat_id: Optional[int] = None
     owner_id: Optional[int] = None
@@ -21,14 +22,36 @@ class Signature:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    def sign(self) -> None:
-        self.signed_at = datetime.utcnow()
-        self.generate_signature_hash()
+    # Read-only display fields populated by the repository layer.
+    surat_jenis: Optional[str] = None
+    mahasiswa_name: Optional[str] = None
+    owner_name: Optional[str] = None
+    owner_nip: Optional[str] = None
 
-    def generate_signature_hash(self) -> str:
-        raw = f"{self.surat_id}:{self.owner_id}:{self.role}:{uuid.uuid4()}"
-        self.signature_hash = hashlib.sha256(raw.encode()).hexdigest()
-        return self.signature_hash
+    # ------------------------------------------------------------------
+    # Business actions
+    # ------------------------------------------------------------------
+
+    def sign(self, image_path: str, signature_hash: str) -> None:
+        """Sign this signature record.
+
+        Validates that it has not been signed yet, then records the
+        image, hash and timestamp.
+        """
+        if self.is_signed():
+            raise ValidationError("Sudah ditandatangani")
+        self.image_path = image_path
+        self.signed_at = datetime.now(timezone.utc)
+        self.signature_hash = signature_hash
+
+    def validate_owner(self, user_id: int) -> None:
+        """Raise if *user_id* is not the owner of this signature."""
+        if self.owner_id != user_id:
+            raise UnauthorizedError("Bukan tanda tangan Anda")
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
 
     def is_signed(self) -> bool:
         return self.signed_at is not None

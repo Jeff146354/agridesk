@@ -1,183 +1,229 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
-
-const STATUS_LABEL = {
-  DRAFT: 'Draft',
-  MENUNGGU_TTD_DOSEN: 'Menunggu TTD Dosen',
-  MENUNGGU_PROSES_ADMIN: 'Menunggu Proses Admin',
-  SELESAI: 'Selesai',
-  DITOLAK: 'Ditolak',
-};
-
-const STATUS_COLORS = {
-  DRAFT: 'bg-gray-100 text-gray-800 border-gray-200',
-  MENUNGGU_TTD_DOSEN: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  MENUNGGU_PROSES_ADMIN: 'bg-blue-100 text-blue-800 border-blue-200',
-  SELESAI: 'bg-green-100 text-green-800 border-green-200',
-  DITOLAK: 'bg-red-100 text-red-800 border-red-200',
-};
+import { motion } from 'framer-motion';
+import TableSkeleton from '../components/TableSkeleton';
+import EmptyState from '../components/EmptyState';
+import { useListData } from '../hooks/useListData';
+import {
+  SURAT_FILTERS,
+  SURAT_FILTER_LABELS,
+  SURAT_STATUS_COLORS,
+  SURAT_STATUS_LABELS,
+} from '../constants/suratStatus';
 
 export default function MahasiswaDashboard() {
-  const [letters, setLetters] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [sortBy, setSortBy] = useState('id_desc');
-
-  const resetFilters = () => {
-    setSearch('');
-    setStatusFilter('ALL');
-    setSortBy('id_desc');
-  };
-
-  useEffect(() => {
-    api.get('/api/surat/my').then((res) => setLetters(res.data)).finally(() => setLoading(false));
+  const fetchLetters = useCallback(() => {
+    return api.get('/api/surat/my').then((res) => res.data);
   }, []);
 
-  const visibleLetters = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    let items = [...letters];
+  const filterLetters = useCallback((items, keywordInput, currentFilters) => {
+    const keyword = keywordInput.trim().toLowerCase();
+    const status = currentFilters?.status ?? 'ALL';
+    let filtered = [...items];
 
-    if (statusFilter !== 'ALL') {
-      items = items.filter((item) => item.status === statusFilter);
+    if (status !== 'ALL') {
+      if (status === 'MENUNGGU') {
+        filtered = filtered.filter((item) => (
+          item.status === 'MENUNGGU_TTD_DOSEN' || item.status === 'MENUNGGU_PROSES_ADMIN'
+        ));
+      } else {
+        filtered = filtered.filter((item) => item.status === status);
+      }
     }
 
     if (keyword) {
-      items = items.filter((item) => {
-        const haystack = [item.jenis, item.keperluan, String(item.id)]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
+      filtered = filtered.filter((item) => {
+        const haystack = [item.jenis, item.keperluan, String(item.id)].join(' ').toLowerCase();
         return haystack.includes(keyword);
       });
     }
 
-    items.sort((a, b) => {
-      if (sortBy === 'id_asc') return a.id - b.id;
-      if (sortBy === 'jenis_asc') return String(a.jenis || '').localeCompare(String(b.jenis || ''), 'id');
-      if (sortBy === 'status_asc') return String(STATUS_LABEL[a.status] || a.status).localeCompare(String(STATUS_LABEL[b.status] || b.status), 'id');
-      return b.id - a.id;
-    });
+    return filtered.sort((a, b) => b.id - a.id);
+  }, []);
 
-    return items;
-  }, [letters, search, statusFilter, sortBy]);
+  const {
+    items: letters,
+    filtered: visibleLetters,
+    loading,
+    error,
+    search,
+    setSearch,
+    filters,
+    setFilters,
+  } = useListData({
+    fetcher: fetchLetters,
+    filterFn: filterLetters,
+    initialFilters: { status: 'ALL' },
+    fallbackError: 'Gagal memuat data surat',
+  });
+
+  const statusFilter = filters.status ?? 'ALL';
+  const setStatusFilter = (value) => {
+    setFilters((prev) => ({ ...prev, status: value }));
+  };
+
+  const stats = useMemo(() => {
+    return {
+      menunggu: letters.filter(l => l.status === 'MENUNGGU_TTD_DOSEN' || l.status === 'MENUNGGU_PROSES_ADMIN').length,
+      selesai: letters.filter(l => l.status === 'SELESAI').length,
+      ditolak: letters.filter(l => l.status === 'DITOLAK').length,
+    };
+  }, [letters]);
 
   if (loading) return (
-    <div className="flex justify-center items-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <TableSkeleton rows={4} />
     </div>
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-gray-200">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4 sm:mb-0">Daftar Surat Saya</h2>
-        <Link to="/surat/new" className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
-          <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-          Buat Surat Baru
-        </Link>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12"
+    >
+      <div className="mb-12">
+        <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Arsip &middot; Pengajuan Saya</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl font-serif text-primary mb-3">
+              Riwayat <span className="italic">surat Anda.</span>
+            </h1>
+            <p className="text-sm text-primary/70 leading-relaxed">
+              Catatan lengkap surat yang pernah Anda ajukan. Pantau status pengajuan atau unduh dokumen yang telah disetujui.
+            </p>
+          </div>
+          <Link to="/surat/new" className="shrink-0 px-6 py-3 border border-primary text-primary hover:bg-primary hover:text-white transition-colors text-sm font-medium rounded-sm">
+            Buat Pengajuan Baru
+          </Link>
+        </div>
       </div>
 
-      {letters.length > 0 && (
-        <div className="bg-white rounded-lg border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari jenis, keperluan, ID..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="ALL">Semua Status</option>
-            {Object.keys(STATUS_LABEL).map((status) => (
-              <option key={status} value={status}>{STATUS_LABEL[status]}</option>
-            ))}
-          </select>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="id_desc">Urutkan: ID Terbaru</option>
-            <option value="id_asc">Urutkan: ID Terlama</option>
-            <option value="jenis_asc">Urutkan: Jenis (A-Z)</option>
-            <option value="status_asc">Urutkan: Status</option>
-          </select>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-          >
-            Reset Filter
-          </button>
+      {error && (
+        <div className="mb-8 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-sm">
+          {error}
         </div>
       )}
 
-      {letters.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">Belum ada surat</h3>
-          <p className="mt-1 text-sm text-gray-500">Mulai buat surat permohonan pertama Anda.</p>
-          <div className="mt-6">
-            <Link to="/surat/new" className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors">
-              + Buat Surat
-            </Link>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-sepia-200 rounded-sm bg-white mb-12">
+        <div className="p-8 border-b md:border-b-0 md:border-r border-sepia-200 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-primary/30"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Menunggu Persetujuan</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(stats.menunggu).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
+        <div className="p-8 border-b md:border-b-0 md:border-r border-sepia-200 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-green-700"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Selesai</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(stats.selesai).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
+        <div className="p-8 relative">
+          <div className="absolute top-8 right-8 w-1.5 h-1.5 rounded-full bg-red-700"></div>
+          <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Ditolak</p>
+          <p className="text-5xl font-serif text-primary">
+            {String(stats.ditolak).padStart(2, '0')}<span className="text-sm font-sans text-primary/50 ml-2">surat</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Table Section */}
+      <div className="bg-white border border-sepia-200 rounded-sm">
+        <div className="p-6 border-b border-sepia-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-serif text-primary">Seluruh Catatan</h3>
+            <p className="text-xs text-primary/60 mt-1">Diurutkan dari yang terbaru.</p>
+          </div>
+          <div className="w-full md:w-auto">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari kode, surat..."
+              className="w-full md:w-64 px-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+            />
           </div>
         </div>
-      ) : (
-        <div className="bg-white shadow-sm border border-gray-100 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+
+        {/* Filter Chips */}
+        <div className="px-6 py-4 border-b border-sepia-200 flex flex-wrap gap-2">
+          {SURAT_FILTERS.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              className={`px-4 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                statusFilter === filter 
+                  ? 'bg-primary text-white border-primary' 
+                  : 'bg-transparent text-primary/70 border-sepia-200 hover:border-primary/40'
+              }`}
+            >
+              {SURAT_FILTER_LABELS[filter] || filter}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-ivory border-b border-sepia-200">
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Kode</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Surat</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Status</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Keperluan</th>
+                <th className="py-4 px-6 text-right text-[10px] font-medium tracking-widest text-primary/50 uppercase">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sepia-200">
+              {visibleLetters.length === 0 ? (
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jenis</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Keperluan</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                  <td colSpan="5" className="p-0">
+                    <EmptyState 
+                      message={letters.length === 0 ? "Belum ada pengajuan" : "Pencarian tidak ditemukan"}
+                      subMessage={letters.length === 0 ? "Anda belum mengajukan surat apapun." : "Coba kata kunci lain."}
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {visibleLetters.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="px-6 py-10 text-center text-gray-500">Tidak ada data yang cocok dengan filter.</td>
-                  </tr>
-                ) : visibleLetters.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#{s.id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{s.jenis}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{s.keperluan}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${STATUS_COLORS[s.status] || 'bg-gray-100 text-gray-800 border-gray-200'}`}>
-                        {STATUS_LABEL[s.status]}
+              ) : (
+                visibleLetters.map((s) => (
+                  <tr key={s.id} className="hover:bg-ivory/50 transition-colors group">
+                    <td className="py-5 px-6 text-xs text-primary/60 font-mono">
+                      SR-2026-{String(s.id).padStart(4, '0')}
+                    </td>
+                    <td className="py-5 px-6">
+                      <p className="text-sm font-medium text-primary">{s.jenis}</p>
+                    </td>
+                    <td className="py-5 px-6">
+                      <span className={`inline-block px-2.5 py-1 text-[10px] font-medium tracking-wider uppercase border rounded-sm ${SURAT_STATUS_COLORS[s.status] || SURAT_STATUS_COLORS.DRAFT}`}>
+                        {SURAT_STATUS_LABELS[s.status] || s.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end space-x-3">
-                        <Link to={`/surat/${s.id}/pdf`} className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors">
-                          Lihat PDF
-                        </Link>
-                        <Link to={`/surat/${s.id}`} className="text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded transition-colors">
+                    <td className="py-5 px-6 text-xs text-primary/70 max-w-[200px] truncate">
+                      {s.keperluan}
+                    </td>
+                    <td className="py-5 px-6 text-right">
+                      <div className="flex justify-end gap-2">
+                         {s.status === 'SELESAI' && (
+                           <Link to={`/surat/${s.id}/pdf`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm">
+                             PDF
+                           </Link>
+                         )}
+                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
                           Detail
                         </Link>
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

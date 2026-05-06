@@ -5,6 +5,8 @@ from app.repositories.surat_repository import SuratRepository
 
 
 class VerificationService:
+    """Public document verification service."""
+
     def __init__(self, db: Session):
         self.surat_repo = SuratRepository(db)
 

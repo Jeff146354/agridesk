@@ -1,6 +1,7 @@
 import pytest
 
 from app.domain.enums import UserRole
+from app.domain.exceptions import DuplicateEntityError, ValidationError
 from app.services.auth_service import AuthService
 
 
@@ -37,7 +38,7 @@ class TestAuthService:
             name="Budi", email="budi@university.ac.id",
             password="pw", role=UserRole.MAHASISWA, nim="111",
         )
-        with pytest.raises(ValueError, match="Email sudah terdaftar"):
+        with pytest.raises(DuplicateEntityError, match="Email sudah terdaftar"):
             service.register(
                 name="Budi2", email="budi@university.ac.id",
                 password="pw", role=UserRole.MAHASISWA, nim="222",
@@ -49,7 +50,7 @@ class TestAuthService:
             name="A", email="a@u.id", password="pw",
             role=UserRole.MAHASISWA, nim="111",
         )
-        with pytest.raises(ValueError, match="NIM sudah terdaftar"):
+        with pytest.raises(DuplicateEntityError, match="NIM sudah terdaftar"):
             service.register(
                 name="B", email="b@u.id", password="pw",
                 role=UserRole.MAHASISWA, nim="111",
@@ -72,10 +73,10 @@ class TestAuthService:
             name="Budi", email="budi@u.id", password="secret",
             role=UserRole.MAHASISWA, nim="111",
         )
-        with pytest.raises(ValueError, match="Email atau password salah"):
+        with pytest.raises(ValidationError, match="Email atau password salah"):
             service.login("budi@u.id", "wrong")
 
     def test_login_nonexistent_email_raises(self, db):
         service = AuthService(db)
-        with pytest.raises(ValueError, match="Email atau password salah"):
+        with pytest.raises(ValidationError, match="Email atau password salah"):
             service.login("no@u.id", "pw")

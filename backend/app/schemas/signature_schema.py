@@ -26,3 +26,5 @@ class SignatureResponse(BaseModel):
 class SignatureProfileResponse(BaseModel):
     has_saved_signature: bool
     signature_image_path: Optional[str] = None
+    signature_hash: Optional[str] = None
+    updated_at: Optional[datetime] = None

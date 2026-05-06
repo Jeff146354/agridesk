@@ -1,30 +1,40 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
+import { getErrorMessage } from '../utils/error';
+import { toast } from 'sonner';
+import { motion } from 'framer-motion';
+import TableSkeleton from '../components/TableSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const STATUS_LABEL = {
   DRAFT: 'Draft',
-  MENUNGGU_TTD_DOSEN: 'Menunggu TTD Dosen',
-  MENUNGGU_PROSES_ADMIN: 'Menunggu Proses Admin',
+  MENUNGGU_TTD_DOSEN: 'Menunggu Dosen',
+  MENUNGGU_PROSES_ADMIN: 'Menunggu Admin',
   SELESAI: 'Selesai',
   DITOLAK: 'Ditolak',
+};
+
+const STATUS_COLORS = {
+  DRAFT: 'bg-sepia-200 text-primary border-transparent',
+  MENUNGGU_TTD_DOSEN: 'bg-ivory-dark text-primary border-sepia-200',
+  MENUNGGU_PROSES_ADMIN: 'bg-ivory-dark text-primary border-sepia-200',
+  SELESAI: 'bg-primary/5 text-primary border-primary/20',
+  DITOLAK: 'bg-red-50 text-red-900 border-red-200',
 };
 
 export default function AdminDashboard() {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('id_desc');
 
-  const resetFilters = () => {
-    setSearch('');
-    setStatusFilter('ALL');
-    setSortBy('id_desc');
-  };
-
   const load = () => {
-    api.get('/api/surat/pending').then((res) => setPending(res.data)).finally(() => setLoading(false));
+    api.get('/api/surat/pending')
+      .then((res) => setPending(res.data))
+      .catch(err => setError(getErrorMessage(err, 'Gagal memuat antrean pending')))
+      .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
@@ -33,16 +43,9 @@ export default function AdminDashboard() {
     const keyword = search.trim().toLowerCase();
     let items = [...pending];
 
-    if (statusFilter !== 'ALL') {
-      items = items.filter((item) => item.status === statusFilter);
-    }
-
     if (keyword) {
       items = items.filter((item) => {
-        const haystack = [item.jenis, item.keperluan, item.mahasiswa_nim, String(item.id)]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
+        const haystack = [item.jenis, item.keperluan, item.mahasiswa_nim, String(item.id)].join(' ').toLowerCase();
         return haystack.includes(keyword);
       });
     }
@@ -54,14 +57,15 @@ export default function AdminDashboard() {
     });
 
     return items;
-  }, [pending, search, statusFilter, sortBy]);
+  }, [pending, search, sortBy]);
 
   const handleApprove = async (id) => {
     try {
       await api.post('/api/surat/' + id + '/approve');
+      toast.success('Persetujuan berhasil');
       load();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Gagal menyetujui');
+      toast.error(getErrorMessage(err, 'Gagal menyetujui'));
     }
   };
 
@@ -70,120 +74,129 @@ export default function AdminDashboard() {
     if (!reason) return;
     try {
       await api.post('/api/surat/' + id + '/reject', { reason });
+      toast.success('Surat ditolak');
       load();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Gagal menolak');
+      toast.error(getErrorMessage(err, 'Gagal menolak'));
     }
   };
 
   if (loading) return (
-    <div className="flex justify-center items-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <TableSkeleton rows={4} />
     </div>
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-gray-200">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 border-l-4 border-blue-600 pl-3">Pending Admin</h2>
-          <p className="mt-1 text-sm text-gray-500 pl-3">Surat yang membutuhkan persetujuan Anda segera.</p>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12"
+    >
+      <div className="mb-12">
+        <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Antrean &middot; Persetujuan Akhir</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl font-serif text-primary mb-3">
+              Meja <span className="italic">Administrasi.</span>
+            </h1>
+            <p className="text-sm text-primary/70 leading-relaxed">
+              Surat-surat di bawah ini telah ditandatangani dan menunggu pengesahan resmi (penerbitan nomor surat dan stempel digital).
+            </p>
+          </div>
+          <Link to="/surat/all" className="shrink-0 px-6 py-3 border border-sepia-200 text-primary hover:border-primary transition-colors text-sm font-medium rounded-sm bg-ivory">
+            Lihat Arsip Lengkap
+          </Link>
         </div>
-        <Link to="/surat/all" className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-          Lihat Semua Surat
-        </Link>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari jenis, keperluan, NIM, ID..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="ALL">Semua Status</option>
-          <option value="MENUNGGU_PROSES_ADMIN">Menunggu Proses Admin</option>
-          <option value="MENUNGGU_TTD_DOSEN">Menunggu TTD Dosen</option>
-        </select>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="id_desc">Urutkan: ID Terbaru</option>
-          <option value="id_asc">Urutkan: ID Terlama</option>
-          <option value="jenis_asc">Urutkan: Jenis (A-Z)</option>
-        </select>
-        <button
-          type="button"
-          onClick={resetFilters}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-        >
-          Reset Filter
-        </button>
-      </div>
-
-      {pending.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 13l4 4L19 7" />
-          </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">Semua Beres!</h3>
-          <p className="mt-1 text-sm text-gray-500">Tidak ada surat yang menunggu proses admin.</p>
+      {error && (
+        <div className="mb-8 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-sm">
+          {error}
         </div>
-      ) : (
-        <div className="bg-white shadow-sm border border-gray-100 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+      )}
+
+      {/* Table Section */}
+      <div className="bg-white border border-sepia-200 rounded-sm">
+        <div className="p-6 border-b border-sepia-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-serif text-primary">Tumpukan Map ({pending.length})</h3>
+            <p className="text-xs text-primary/60 mt-1">Perlu tindakan segera.</p>
+          </div>
+          <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari NIM, surat..."
+              className="w-full sm:w-64 px-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full sm:w-auto px-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+            >
+              <option value="id_desc">Terbaru</option>
+              <option value="id_asc">Terlama</option>
+              <option value="jenis_asc">Jenis Surat</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-ivory border-b border-sepia-200">
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Kode</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Surat & Pemohon</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Keperluan</th>
+                <th className="py-4 px-6 text-right text-[10px] font-medium tracking-widest text-primary/50 uppercase">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sepia-200">
+              {visiblePending.length === 0 ? (
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Jenis Surat</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Keperluan</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi</th>
+                  <td colSpan="4" className="p-0">
+                    <EmptyState 
+                      message={pending.length === 0 ? "Meja kerja bersih" : "Pencarian tidak ditemukan"}
+                      subMessage={pending.length === 0 ? "Tidak ada surat yang perlu disahkan." : "Coba kata kunci lain."}
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {visiblePending.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="px-6 py-10 text-center text-gray-500">Tidak ada data yang cocok dengan filter.</td>
-                  </tr>
-                ) : visiblePending.map((s) => (
-                  <tr key={s.id} className="hover:bg-blue-50/50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#{s.id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{s.jenis}</div>
+              ) : (
+                visiblePending.map((s) => (
+                  <tr key={s.id} className="hover:bg-ivory/50 transition-colors group">
+                    <td className="py-5 px-6 text-xs text-primary/60 font-mono">
+                      SR-2026-{String(s.id).padStart(4, '0')}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 max-w-xs truncate" title={s.keperluan}>{s.keperluan}</div>
+                    <td className="py-5 px-6">
+                      <p className="text-sm font-medium text-primary">{s.jenis}</p>
+                      <p className="text-xs text-primary/60 mt-1">{s.mahasiswa_name || s.mahasiswa_nim}</p>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                        {STATUS_LABEL[s.status]}
-                      </span>
+                    <td className="py-5 px-6 text-xs text-primary/70 max-w-[200px] truncate">
+                      {s.keperluan}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end items-center space-x-2">
-                        <Link to={`/surat/${s.id}/pdf`} className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors hidden sm:inline-block">PDF</Link>
-                        <button className="text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded shadow-sm transition-colors" onClick={() => handleApprove(s.id)}>Setujui</button>
-                        <button className="text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded shadow-sm transition-colors" onClick={() => handleReject(s.id)}>Tolak</button>
-                        <Link to={`/surat/${s.id}`} className="text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded transition-colors">Detail</Link>
+                    <td className="py-5 px-6 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleApprove(s.id)} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
+                          Setujui
+                        </button>
+                        <button onClick={() => handleReject(s.id)} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-red-700 hover:border-red-700 hover:bg-red-50 transition-colors rounded-sm">
+                          Tolak
+                        </button>
+                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
+                          Detail
+                        </Link>
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

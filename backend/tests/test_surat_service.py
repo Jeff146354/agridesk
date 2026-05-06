@@ -2,6 +2,12 @@ import pytest
 from unittest.mock import patch
 
 from app.domain.enums import UserRole, SuratStatus
+from app.domain.exceptions import (
+    EntityNotFoundError,
+    InvalidStateTransitionError,
+    UnauthorizedError,
+    ValidationError,
+)
 from app.models.user import UserModel
 from app.models.surat import SuratModel
 from app.services.surat_service import SuratService
@@ -125,7 +131,7 @@ class TestSuratServiceSubmit:
             jenis="test", keperluan="test",
             file_path="/fake.pdf",
         )
-        with pytest.raises(PermissionError, match="Bukan surat Anda"):
+        with pytest.raises(UnauthorizedError, match="Bukan surat Anda"):
             service.submit_letter(surat.id, other.id)
 
 
@@ -142,8 +148,8 @@ class TestSuratServiceApproval:
             jenis="test", keperluan="test",
             file_path="/fake.pdf",
         )
-        service.submit_letter(surat.id, student.id)
-        assert surat.status == SuratStatus.MENUNGGU_PROSES_ADMIN
+        submitted = service.submit_letter(surat.id, student.id)
+        assert submitted.status == SuratStatus.MENUNGGU_PROSES_ADMIN
 
         result = service.approve_by_admin(surat.id, admin.id)
         assert result.status == SuratStatus.SELESAI
@@ -160,7 +166,7 @@ class TestSuratServiceApproval:
             file_path="/fake.pdf",
         )
         # Still DRAFT, not MENUNGGU_PROSES_ADMIN
-        with pytest.raises(ValueError, match="tidak dalam status"):
+        with pytest.raises(InvalidStateTransitionError):
             service.approve_by_admin(surat.id, admin.id)
 
 
@@ -209,5 +215,5 @@ class TestSuratServiceReject:
             lecturer_ids=[assigned_dosen.id],
         )
 
-        with pytest.raises(ValueError, match="bukan pending tanda tangan Anda"):
+        with pytest.raises(UnauthorizedError, match="bukan pending tanda tangan Anda"):
             service.reject_letter(surat.id, other_dosen.id, UserRole.DOSEN.value, "Tidak sesuai")

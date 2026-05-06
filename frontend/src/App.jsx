@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -20,10 +22,11 @@ import './index.css';
 export default function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-center" richColors theme="light" />
       <BrowserRouter>
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="min-h-screen bg-ivory flex flex-col">
           <Navbar />
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <main className="flex-1 w-full flex flex-col">
             <Routes>
               <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -61,9 +64,9 @@ export default function App() {
             } />
           </Routes>
           </main>
+          <Footer />
         </div>
       </BrowserRouter>
     </AuthProvider>
   );
 }
-

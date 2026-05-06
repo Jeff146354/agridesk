@@ -1,17 +1,18 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
+import { getErrorMessage } from '../utils/error';
+import { toast } from 'sonner';
+import { motion } from 'framer-motion';
+import TableSkeleton from '../components/TableSkeleton';
+import EmptyState from '../components/EmptyState';
 
 export default function DosenDashboard() {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('surat_desc');
-
-  const resetFilters = () => {
-    setSearch('');
-    setSortBy('surat_desc');
-  };
 
   const load = () => {
     setLoading(true);
@@ -19,6 +20,7 @@ export default function DosenDashboard() {
       .then((pendingRes) => {
         setPending(pendingRes.data || []);
       })
+      .catch((err) => setError(getErrorMessage(err, 'Gagal memuat daftar antrean')))
       .finally(() => setLoading(false));
   };
 
@@ -30,10 +32,7 @@ export default function DosenDashboard() {
 
     if (keyword) {
       items = items.filter((item) => {
-        const haystack = [item.surat_jenis, item.mahasiswa_name, String(item.surat_id)]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
+        const haystack = [item.surat_jenis, item.mahasiswa_name, String(item.surat_id)].join(' ').toLowerCase();
         return haystack.includes(keyword);
       });
     }
@@ -51,14 +50,15 @@ export default function DosenDashboard() {
     try {
       const form = new FormData();
       await api.post('/api/signatures/lecturer/' + signatureId + '/sign', form);
+      toast.success('Berhasil menandatangani dokumen');
       load();
     } catch (err) {
-      const message = err.response?.data?.detail || 'Gagal menandatangani';
-      if (String(message).toLowerCase().includes('belum disimpan')) {
-        alert('Simpan dulu tanda tangan Anda di menu Tanda Tangan Saya');
+      const message = getErrorMessage(err, 'Gagal menandatangani');
+      if (message.toLowerCase().includes('belum disimpan')) {
+        toast.warning('Simpan dulu tanda tangan Anda di menu Tanda Tangan');
         return;
       }
-      alert(message);
+      toast.error(message);
     }
   };
 
@@ -67,112 +67,131 @@ export default function DosenDashboard() {
     if (!reason || !reason.trim()) return;
     try {
       await api.post('/api/surat/' + suratId + '/reject', { reason: reason.trim() });
+      toast.success('Surat ditolak');
       load();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Gagal menolak surat');
+      toast.error(getErrorMessage(err, 'Gagal menolak surat'));
     }
   };
 
   if (loading) return (
-    <div className="flex justify-center items-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <TableSkeleton rows={4} />
     </div>
   );
 
   return (
-    <div className="space-y-12">
-      <section>
-        <div className="pb-4 border-b border-gray-200 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 border-l-4 border-yellow-400 pl-3">Tanda Tangan Pending</h2>
-            <p className="mt-1 text-sm text-gray-500 pl-3">Surat yang membutuhkan tanda tangan Anda segera.</p>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12"
+    >
+      <div className="mb-12">
+        <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-4">Antrean &middot; Tanda Tangan</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl font-serif text-primary mb-3">
+              Meja <span className="italic">Kerja Anda.</span>
+            </h1>
+            <p className="text-sm text-primary/70 leading-relaxed">
+              Daftar surat yang memerlukan peninjauan dan tanda tangan digital Anda sebelum diproses lebih lanjut oleh pihak fakultas.
+            </p>
           </div>
-          <Link to="/surat/all-dosen" className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
-            Lihat Semua Surat
+          <Link to="/surat/all-dosen" className="shrink-0 px-6 py-3 border border-sepia-200 text-primary hover:border-primary transition-colors text-sm font-medium rounded-sm bg-ivory">
+            Lihat Semua Riwayat
           </Link>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg border border-gray-100 p-4 grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari jenis surat, mahasiswa, ID surat..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="surat_desc">Urutkan: ID Surat Terbaru</option>
-            <option value="surat_asc">Urutkan: ID Surat Terlama</option>
-            <option value="jenis_asc">Urutkan: Jenis (A-Z)</option>
-          </select>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-          >
-            Reset Filter
-          </button>
+      {error && (
+        <div className="mb-8 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-sm">
+          {error}
         </div>
-        
-        {pending.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-10 text-center">
-            <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Semua Beres!</h3>
-            <p className="mt-1 text-sm text-gray-500">Tidak ada tanda tangan yang menunggu saat ini.</p>
+      )}
+
+      {/* Table Section */}
+      <div className="bg-white border border-sepia-200 rounded-sm">
+        <div className="p-6 border-b border-sepia-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-serif text-primary">Tumpukan Map ({pending.length})</h3>
+            <p className="text-xs text-primary/60 mt-1">Perlu ditandatangani segera.</p>
           </div>
-        ) : (
-          <div className="bg-white shadow-sm border border-gray-100 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Surat</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Mahasiswa</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi</th>
+          <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari mahasiswa, surat..."
+              className="w-full sm:w-64 px-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full sm:w-auto px-4 py-2 bg-ivory border border-sepia-200 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors"
+            >
+              <option value="surat_desc">Terbaru</option>
+              <option value="surat_asc">Terlama</option>
+              <option value="jenis_asc">Jenis Surat</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-ivory border-b border-sepia-200">
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Kode</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Surat & Pemohon</th>
+                <th className="py-4 px-6 text-[10px] font-medium tracking-widest text-primary/50 uppercase">Status</th>
+                <th className="py-4 px-6 text-right text-[10px] font-medium tracking-widest text-primary/50 uppercase">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sepia-200">
+              {visiblePending.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="p-0">
+                    <EmptyState 
+                      message={pending.length === 0 ? "Meja kerja bersih" : "Pencarian tidak ditemukan"}
+                      subMessage={pending.length === 0 ? "Tidak ada surat yang menunggu tanda tangan." : "Coba kata kunci lain."}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                visiblePending.map((sig) => (
+                  <tr key={sig.id} className="hover:bg-ivory/50 transition-colors group">
+                    <td className="py-5 px-6 text-xs text-primary/60 font-mono">
+                      SR-2026-{String(sig.surat_id).padStart(4, '0')}
+                    </td>
+                    <td className="py-5 px-6">
+                      <p className="text-sm font-medium text-primary">{sig.surat_jenis || '-'}</p>
+                      <p className="text-xs text-primary/60 mt-1">{sig.mahasiswa_name || '-'}</p>
+                    </td>
+                    <td className="py-5 px-6">
+                      <span className="inline-block px-2.5 py-1 text-[10px] font-medium tracking-wider uppercase border rounded-sm bg-ivory-dark text-primary border-sepia-200">
+                        Menunggu Tanda Tangan
+                      </span>
+                    </td>
+                    <td className="py-5 px-6 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleSign(sig.id)} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
+                          Setujui & TTD
+                        </button>
+                        <button onClick={() => handleReject(sig.surat_id)} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-red-700 hover:border-red-700 hover:bg-red-50 transition-colors rounded-sm">
+                          Tolak
+                        </button>
+                        <Link to={`/surat/${sig.surat_id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
+                          Detail
+                        </Link>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {visiblePending.length === 0 ? (
-                    <tr>
-                      <td colSpan="4" className="px-6 py-10 text-center text-gray-500">Tidak ada data yang cocok dengan filter.</td>
-                    </tr>
-                  ) : visiblePending.map((sig) => (
-                    <tr key={sig.id} className="hover:bg-yellow-50/50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{sig.surat_jenis || '-'}</div>
-                        <div className="text-xs text-gray-500">ID Surat: #{sig.surat_id}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{sig.mahasiswa_name || '-'}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
-                          Menunggu TTD
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end space-x-2">
-                          <Link to={`/surat/${sig.surat_id}/pdf`} className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors hidden sm:inline-block">PDF</Link>
-                          <Link to={`/surat/${sig.surat_id}`} className="text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded transition-colors">Detail</Link>
-                          <button className="text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded shadow-sm transition-colors" onClick={() => handleSign(sig.id)}>TTD</button>
-                          <button className="text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded shadow-sm transition-colors" onClick={() => handleReject(sig.surat_id)}>Tolak</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </motion.div>
   );
 }
