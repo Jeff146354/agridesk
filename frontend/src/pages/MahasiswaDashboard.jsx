@@ -207,12 +207,20 @@ export default function MahasiswaDashboard() {
                     </td>
                     <td className="py-5 px-6 text-right">
                       <div className="flex justify-end gap-2">
-                         {s.status === 'SELESAI' && (
-                           <Link to={`/surat/${s.id}/pdf`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm">
-                             PDF
-                           </Link>
-                         )}
-                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
+                          <button onClick={() => {
+                            const token = localStorage.getItem('token') || '';
+                            const url = `http://127.0.0.1:8000/api/surat/${s.id}/pdf?token=${encodeURIComponent(token)}`;
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `surat-${s.id}.pdf`;
+                            link.target = '_blank';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white flex items-center gap-1">
+                            Unduh PDF
+                          </button>
+                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
                           Detail
                         </Link>
                       </div>

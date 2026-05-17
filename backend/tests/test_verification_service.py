@@ -31,7 +31,7 @@ class TestVerificationService:
         service = VerificationService(db)
         result = service.verify_document("abc123")
         assert result["status"] == "VALID"
-        assert result["surat_id"] == surat.id
+        assert result["document"]["id"] == surat.id
 
     def test_invalid_hash(self, db):
         service = VerificationService(db)

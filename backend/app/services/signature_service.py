@@ -60,6 +60,18 @@ class SignatureService:
         # Domain validation — ownership & double-sign guard
         signature.validate_owner(lecturer_id)
 
+        # Enforce sequential signing order
+        from app.models.surat import SuratModel
+        surat_model = self.db.query(SuratModel).filter(SuratModel.id == signature.surat_id).first()
+        if surat_model and surat_model.is_sequential:
+            next_signers = self.signature_repo.get_next_to_sign(signature.surat_id, True)
+            allowed_ids = {s.id for s in next_signers}
+            if signature.id not in allowed_ids:
+                from app.domain.exceptions import InvalidStateTransitionError
+                raise InvalidStateTransitionError(
+                    "Belum giliran Anda untuk menandatangani. Harap tunggu penanda tangan sebelumnya."
+                )
+
         sig_hash = HashGenerator.generate_hash(
             f"{signature.surat_id}:{lecturer_id}:DOSEN"
         )
@@ -97,7 +109,18 @@ class SignatureService:
     # ------------------------------------------------------------------
 
     def get_pending_for_lecturer(self, lecturer_id: int) -> List[Signature]:
-        return self.signature_repo.get_pending_for_lecturer(lecturer_id)
+        all_pending = self.signature_repo.get_pending_for_lecturer(lecturer_id)
+        # Filter out sequential surat where it's not this lecturer's turn
+        from app.models.surat import SuratModel
+        result = []
+        for sig in all_pending:
+            surat_model = self.db.query(SuratModel).filter(SuratModel.id == sig.surat_id).first()
+            if surat_model and surat_model.is_sequential:
+                next_signers = self.signature_repo.get_next_to_sign(sig.surat_id, True)
+                if not any(s.id == sig.id for s in next_signers):
+                    continue  # Not this lecturer's turn yet
+            result.append(sig)
+        return result
 
     def get_signed_for_lecturer(self, lecturer_id: int) -> List[Signature]:
         return self.signature_repo.get_signed_for_lecturer(lecturer_id)

@@ -2,7 +2,70 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getErrorMessage } from '../utils/error';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+import { ChevronDown } from 'lucide-react';
+
+function CustomFormDropdown({ value, onChange, placeholder, options }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.value === value) || null;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 bg-ivory border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-all text-sm cursor-pointer flex justify-between items-center text-left"
+      >
+        <span className={selectedOption ? 'text-primary' : 'text-primary/40'}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={16} className={`text-primary/60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Click outside backdrop */}
+            <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+            
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute left-0 right-0 mt-1.5 bg-white border border-sepia-200 rounded-sm shadow-lg max-h-60 overflow-y-auto z-20"
+            >
+              <ul className="py-1">
+                {options.map((option) => (
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }}
+                      className={`w-full px-4 py-2.5 text-left text-sm transition-colors flex items-center justify-between
+                        ${value === option.value 
+                          ? 'bg-primary text-white font-medium' 
+                          : 'text-primary/80 hover:bg-ivory hover:text-primary'
+                        }`}
+                    >
+                      <span>{option.label}</span>
+                      {value === option.value && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -16,6 +79,14 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!form.email.endsWith('@apps.ipb.ac.id')) {
+      const errorMsg = 'Pendaftaran hanya diperbolehkan menggunakan email institusi IPB (@apps.ipb.ac.id).';
+      setError(errorMsg);
+      toast.error('Domain email tidak valid!');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = { ...form };
@@ -116,7 +187,7 @@ export default function RegisterPage() {
                   value={form.email}
                   onChange={set('email')}
                   className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm"
-                  placeholder="john@example.com"
+                  placeholder="nama@apps.ipb.ac.id"
                 />
               </div>
 
@@ -134,19 +205,20 @@ export default function RegisterPage() {
                 />
               </div>
 
-              <div>
+              <div className="relative">
                 <label className="block text-xs tracking-widest text-primary/60 uppercase mb-2">
                   Peran Pengguna
                 </label>
-                <select
+                <CustomFormDropdown
+                  placeholder="Pilih Peran Pengguna"
                   value={form.role}
-                  onChange={set('role')}
-                  className="w-full px-4 py-3 bg-white/50 border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-colors text-sm cursor-pointer"
-                >
-                  <option value="MAHASISWA">Mahasiswa</option>
-                  <option value="DOSEN">Dosen</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
+                  onChange={(val) => setForm({ ...form, role: val })}
+                  options={[
+                    { value: 'MAHASISWA', label: 'Mahasiswa' },
+                    { value: 'DOSEN', label: 'Dosen' },
+                    { value: 'ADMIN', label: 'Admin' }
+                  ]}
+                />
               </div>
 
               {form.role === 'MAHASISWA' && (

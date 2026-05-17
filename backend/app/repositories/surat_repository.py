@@ -36,6 +36,7 @@ class SuratRepository:
             jenis=model.jenis,
             keperluan=model.keperluan,
             is_external=model.is_external,
+            is_sequential=model.is_sequential,
             file_path=model.file_path,
             internal_fields=internal_fields,
             status=model.status,
@@ -56,6 +57,7 @@ class SuratRepository:
         model.jenis = domain.jenis
         model.keperluan = domain.keperluan
         model.is_external = domain.is_external
+        model.is_sequential = domain.is_sequential
         model.file_path = domain.file_path
         model.internal_fields_raw = (
             json.dumps(domain.internal_fields, ensure_ascii=False)

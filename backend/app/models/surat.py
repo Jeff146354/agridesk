@@ -23,6 +23,7 @@ class SuratModel(Base):
     document_hash = Column(String, nullable=True, unique=True)
     pdf_path = Column(String, nullable=True)
     qr_path = Column(String, nullable=True)
+    is_sequential = Column(Boolean, default=False, nullable=False)
     rejection_reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

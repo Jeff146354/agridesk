@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,6 +21,15 @@ class Signature:
     signed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    # Signature placement
+    page_number: int = 1
+    signing_order: Optional[int] = None
+    pos_x: Optional[float] = None
+    pos_y: Optional[float] = None
+    pos_width: Optional[float] = 120.0
+    pos_height: Optional[float] = 60.0
+    owner_email: Optional[str] = None
 
     # Read-only display fields populated by the repository layer.
     surat_jenis: Optional[str] = None
@@ -55,3 +64,4 @@ class Signature:
 
     def is_signed(self) -> bool:
         return self.signed_at is not None
+

@@ -43,3 +43,13 @@ class LecturerSearchResponse(BaseModel):
     name: str
     nip: Optional[str] = None
     email: str
+
+
+class UserSearchResponse(BaseModel):
+    """Used by /api/auth/users/search for the external signing wizard."""
+    id: int
+    name: str
+    email: str
+    role: str
+    nim: Optional[str] = None
+    nip: Optional[str] = None

@@ -40,6 +40,7 @@ class SuratResponse(BaseModel):
     jenis: str
     keperluan: str
     is_external: bool
+    is_sequential: bool = False
     file_path: Optional[str] = None
     internal_fields: Optional[Dict[str, str]] = None
     status: SuratStatus

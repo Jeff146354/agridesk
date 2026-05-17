@@ -93,6 +93,24 @@ class UserRepository:
         models = query.order_by(UserModel.name.asc()).limit(limit).all()
         return [self._to_domain(m) for m in models]
 
+    def search_users(self, keyword: str, limit: int = 10, exclude_id: Optional[int] = None) -> List[User]:
+        """Search users across all roles — for signer selection in external upload."""
+        query = self.db.query(UserModel)
+        if exclude_id:
+            query = query.filter(UserModel.id != exclude_id)
+        if keyword.strip():
+            pattern = f"%{keyword.strip()}%"
+            query = query.filter(
+                or_(
+                    UserModel.name.ilike(pattern),
+                    UserModel.email.ilike(pattern),
+                    UserModel.nip.ilike(pattern),
+                    UserModel.nim.ilike(pattern),
+                )
+            )
+        models = query.order_by(UserModel.name.asc()).limit(limit).all()
+        return [self._to_domain(m) for m in models]
+
     def update(self, user: User) -> User:
         model = self.db.query(UserModel).filter(UserModel.id == user.id).first()
         if not model:
@@ -109,3 +127,4 @@ class UserRepository:
             self.db.commit()
             return True
         return False
+

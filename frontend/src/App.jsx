@@ -17,12 +17,13 @@ import SuratDetailPage from './pages/SuratDetailPage';
 import VerifyPage from './pages/VerifyPage';
 import SignatureProfilePage from './pages/SignatureProfilePage';
 import PdfViewerPage from './pages/PdfViewerPage';
+import ExternalUploadWizardPage from './pages/ExternalUploadWizardPage';
 import './index.css';
 
 export default function App() {
   return (
     <AuthProvider>
-      <Toaster position="top-center" richColors theme="light" />
+      <Toaster position="top-center" richColors theme="light" closeButton offset="80px" />
       <BrowserRouter>
         <div className="min-h-screen bg-ivory flex flex-col">
           <Navbar />
@@ -30,7 +31,8 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route path="/verify" element={<VerifyPage />} />
+            <Route path="/verify/:hash?" element={<VerifyPage />} />
+            <Route path="/verify-sig/:hash?" element={<VerifyPage />} />
 
             <Route path="/" element={<HomePage />} />
 
@@ -49,6 +51,9 @@ export default function App() {
 
             <Route path="/surat/new" element={
               <ProtectedRoute roles={['MAHASISWA']}><CreateSuratPage /></ProtectedRoute>
+            } />
+            <Route path="/surat/new/external" element={
+              <ProtectedRoute roles={['MAHASISWA']}><ExternalUploadWizardPage /></ProtectedRoute>
             } />
             <Route path="/signature/me" element={
               <ProtectedRoute><SignatureProfilePage /></ProtectedRoute>

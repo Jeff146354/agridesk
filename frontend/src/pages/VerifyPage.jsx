@@ -1,172 +1,330 @@
-﻿import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldCheck, ShieldX, Search, User, Clock, FileText, Hash, CheckCircle, XCircle, ChevronRight, AlertTriangle, Download } from 'lucide-react';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
 
 export default function VerifyPage() {
-  const [hash, setHash] = useState('');
+  const { hash: urlHash } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [hash, setHash] = useState(urlHash || '');
   const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
-  const handleVerify = async (e) => {
-    e.preventDefault();
-    if (!hash.trim()) return;
-    
-    setError('');
-    setResult(null);
+  const isSigRoute = location.pathname.startsWith('/verify-sig');
+
+  // Auto-verify on mount if hash is present
+  useEffect(() => {
+    if (urlHash) {
+      performVerification(urlHash);
+    }
+  }, [urlHash, location.pathname]);
+
+  const performVerification = async (targetHash) => {
+    let trimmed = targetHash.trim().replace(/^SHA256:\s*/i, '').replace(/\s/g, '');
+    if (!trimmed) return;
     setLoading(true);
+    setResult(null);
+    setSearched(false);
     
+    const endpoint = isSigRoute 
+      ? `/api/verify/sig/${encodeURIComponent(trimmed)}`
+      : `/api/verify/${encodeURIComponent(trimmed)}`;
+
     try {
-      const res = await api.get('/verify/' + hash.trim());
+      const res = await api.get(endpoint);
       setResult(res.data);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Gagal memverifikasi dokumen. Pastikan hash valid.');
+    } catch {
+      setResult({ status: 'INVALID' });
     } finally {
       setLoading(false);
+      setSearched(true);
     }
   };
 
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    performVerification(hash);
+  };
+
+  const handleTabChange = (type) => {
+    setResult(null);
+    setSearched(false);
+    setHash('');
+    if (type === 'sig') {
+      navigate('/verify-sig', { replace: true });
+    } else {
+      navigate('/verify', { replace: true });
+    }
+  };
+
+  const isValid = result?.status === 'VALID';
+  const docStatus = result?.document?.status;
+
+  let statusType = 'invalid'; // 'valid' | 'draft' | 'rejected' | 'invalid'
+  if (isValid) {
+    if (docStatus === 'SELESAI') {
+      statusType = 'valid';
+    } else if (docStatus === 'DITOLAK') {
+      statusType = 'rejected';
+    } else {
+      statusType = 'draft';
+    }
+  }
+
+  const uniqueSigners = (() => {
+    if (!result?.signers) return [];
+    const map = new Map();
+    result.signers.forEach(s => {
+      const key = `${s.role}_${s.name}`;
+      if (!map.has(key)) {
+        map.set(key, s);
+      }
+    });
+    return Array.from(map.values());
+  })();
+
+  const formatDate = (iso) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} WIB`;
+  };
+
   return (
-    <div className="flex items-center justify-center min-h-[80vh] py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
-      <div className="w-full max-w-lg space-y-8 bg-white p-8 sm:p-10 rounded-xl shadow-sm border border-gray-100">
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center mb-4 border border-blue-200">
-            <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          </div>
-          <h2 className="text-center text-3xl font-extrabold text-gray-900">
-            Verifikasi Dokumen
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600 max-w">
-            Masukkan Document Hash untuk memvalidasi keaslian tanda tangan digital.
+    <div className="min-h-[calc(100vh-140px)] flex items-center justify-center px-4 py-16">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xl">
+
+        {/* Branding */}
+        <div className="text-center mb-8">
+          <p className="text-[10px] tracking-[0.3em] text-primary/40 uppercase mb-4">Agridesk &middot; Verifikasi Dokumen</p>
+          <h1 className="text-3xl sm:text-4xl font-serif text-primary mb-3">
+            Verifikasi <span className="italic">keaslian.</span>
+          </h1>
+          <p className="text-sm text-primary/60 max-w-md mx-auto">
+            {isSigRoute 
+              ? 'Masukkan kode hash tanda tangan atau pindai QR code pada stempel tanda tangan untuk memverifikasi keaslian penandatangan.' 
+              : 'Masukkan kode hash dokumen atau pindai QR code pada dokumen cetak untuk memverifikasi keaslian and integritas dokumen.'}
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleVerify}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="hash" className="sr-only">Document Hash</label>
-              <input
-                id="hash"
-                name="hash"
-                type="text"
-                required
-                className="appearance-none rounded-md relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:z-10 sm:text-sm transition-all shadow-sm"
-                placeholder="Misal: a1b2c3d4..."
-                value={hash}
-                onChange={(e) => setHash(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
+        {/* Tabs */}
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex bg-sepia-100 p-1 rounded-sm border border-sepia-200">
             <button
-              type="submit"
-              disabled={loading || !hash.trim()}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+              type="button"
+              onClick={() => handleTabChange('doc')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-sm transition-colors ${!isSigRoute ? 'bg-white shadow-sm text-primary' : 'text-primary/60 hover:text-primary'}`}
             >
-              {loading ? (
-                <span className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Memverifikasi...
-                </span>
-              ) : (
-                <span className="flex items-center">
-                  <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  Verifikasi Dokumen
-                </span>
-              )}
+              Dokumen
+            </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange('sig')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-sm transition-colors ${isSigRoute ? 'bg-white shadow-sm text-primary' : 'text-primary/60 hover:text-primary'}`}
+            >
+              Tanda Tangan
             </button>
           </div>
+        </div>
+
+        {/* Search form */}
+        <form onSubmit={handleVerify} className="relative flex items-center bg-white border border-sepia-200 rounded-sm shadow-sm p-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors mb-8">
+          <Search size={18} className="text-primary/30 ml-2.5 shrink-0" />
+          <input
+            type="text"
+            value={hash}
+            onChange={(e) => setHash(e.target.value)}
+            placeholder={isSigRoute ? "Masukkan kode hash tanda tangan..." : "Masukkan kode hash dokumen..."}
+            className="flex-1 bg-transparent border-none px-3 py-2.5 text-sm focus:outline-none focus:ring-0 min-w-0"
+          />
+          <button type="submit" disabled={loading || !hash.trim()} className="shrink-0 px-5 py-2 bg-primary text-white text-sm font-medium rounded-sm hover:bg-primary-dark disabled:opacity-40 transition-colors">
+            {loading ? 'Memverifikasi...' : 'Verifikasi'}
+          </button>
         </form>
 
-        {error && (
-          <div className="rounded-md bg-red-50 p-4 border border-red-100 animate-fade-in-up">
-            <div className="flex">
-              <div className="shrink-0">
-                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Verifikasi Gagal</h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error}</p>
+        {/* Result */}
+        <AnimatePresence mode="wait">
+          {searched && result && (
+            <motion.div key="result" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="bg-white border border-sepia-200 rounded-sm shadow-sm overflow-hidden">
+
+              {/* Status banner */}
+              {statusType === 'valid' && (
+                <div className="px-6 py-5 flex items-center gap-4 bg-emerald-50 border-b border-emerald-200">
+                  <ShieldCheck size={36} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <h2 className="text-xl font-serif font-semibold text-emerald-800">
+                      Dokumen Terverifikasi Resmi
+                    </h2>
+                    <p className="text-sm mt-0.5 text-emerald-600">
+                      Keaslian dan integritas dokumen resmi ini terkonfirmasi penuh oleh sistem Agridesk.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
+              )}
 
-        {result && (
-          <div
-            className={`rounded-lg p-6 border animate-fade-in-up ${
-              result.status === 'VALID'
-                ? 'bg-green-50 border-green-200'
-                : 'bg-red-50 border-red-200'
-            }`}
-          >
-            <div className="flex items-center mb-4">
-              <div
-                className={`shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-                  result.status === 'VALID' ? 'bg-green-100' : 'bg-red-100'
-                }`}
-              >
-                {result.status === 'VALID' ? (
-                  <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-              </div>
-              <div className="ml-4">
-                <h3
-                  className={`text-lg font-bold ${
-                    result.status === 'VALID' ? 'text-green-800' : 'text-red-800'
-                  }`}
-                >
-                  Status: {result.status}
-                </h3>
-                <p
-                  className={`text-sm ${
-                    result.status === 'VALID' ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {result.status === 'VALID' 
-                    ? 'Dokumen asli dan tanda tangan tervalidasi.' 
-                    : 'Dokumen tidak valid atau telah dimodifikasi.'}
-                </p>
-              </div>
-            </div>
+              {statusType === 'draft' && (
+                <div className="px-6 py-5 flex items-center gap-4 bg-amber-50 border-b border-amber-200">
+                  <AlertTriangle size={36} className="text-amber-600 shrink-0" />
+                  <div>
+                    <h2 className="text-xl font-serif font-semibold text-amber-800">
+                      Tanda Tangan Valid (Dokumen Draf)
+                    </h2>
+                    <p className="text-sm mt-0.5 text-amber-600">
+                      Tanda tangan digital valid, namun dokumen ini masih berstatus DRAF / dalam proses pengajuan dan belum diterbitkan resmi.
+                    </p>
+                  </div>
+                </div>
+              )}
 
-            {result.status === 'VALID' && (
-              <div className="mt-4 pt-4 border-t border-green-200">
-                <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                  <div className="sm:col-span-1">
-                    <dt className="text-xs font-medium text-green-800 uppercase tracking-wider">ID Surat</dt>
-                    <dd className="mt-1 text-sm font-semibold text-green-900">#{result.surat_id}</dd>
+              {statusType === 'rejected' && (
+                <div className="px-6 py-5 flex items-center gap-4 bg-red-50 border-b border-red-200">
+                  <XCircle size={36} className="text-red-600 shrink-0" />
+                  <div>
+                    <h2 className="text-xl font-serif font-semibold text-red-800">
+                      Dokumen Ditolak / Dibatalkan
+                    </h2>
+                    <p className="text-sm mt-0.5 text-red-600">
+                      Pengajuan dokumen ini telah resmi ditolak atau dibatalkan oleh pihak administrasi Departemen.
+                    </p>
                   </div>
-                  <div className="sm:col-span-1">
-                    <dt className="text-xs font-medium text-green-800 uppercase tracking-wider">Jenis Surat</dt>
-                    <dd className="mt-1 text-sm font-semibold text-green-900">{result.jenis}</dd>
+                </div>
+              )}
+
+              {statusType === 'invalid' && (
+                <div className="px-6 py-5 flex items-center gap-4 bg-red-50 border-b border-red-200">
+                  <ShieldX size={36} className="text-red-600 shrink-0" />
+                  <div>
+                    <h2 className="text-xl font-serif font-semibold text-red-800">
+                      Dokumen Tidak Valid
+                    </h2>
+                    <p className="text-sm mt-0.5 text-red-600">
+                      Hash tidak ditemukan, tanda tangan tidak valid, atau kode verifikasi salah.
+                    </p>
                   </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs font-medium text-green-800 uppercase tracking-wider">Keperluan</dt>
-                    <dd className="mt-1 text-sm text-green-900 bg-green-100/50 p-3 rounded">{result.keperluan}</dd>
+                </div>
+              )}
+
+              {isValid && result.document && (
+                <div className="p-6 space-y-6">
+                  {/* Verification & Status Badge */}
+                  <div className="flex items-center justify-between gap-4 border-b border-sepia-100 pb-4">
+                    {result.verification_id && (
+                      <div className="flex items-center gap-2 text-xs text-primary/50">
+                        <Hash size={12} />
+                        <span>ID Verifikasi: <span className="font-mono font-medium text-primary">{result.verification_id}</span></span>
+                      </div>
+                    )}
+                    
+                    <span className={`px-2.5 py-1 text-[10px] font-bold rounded-sm uppercase tracking-wider
+                      ${statusType === 'valid' ? 'bg-emerald-100 text-emerald-800' : ''}
+                      ${statusType === 'draft' ? 'bg-amber-100 text-amber-800' : ''}
+                      ${statusType === 'rejected' ? 'bg-red-100 text-red-800' : ''}
+                    `}>
+                      {docStatus === 'SELESAI' && 'Selesai & Sah'}
+                      {docStatus === 'DITOLAK' && 'Ditolak'}
+                      {docStatus === 'DRAFT' && 'Draf'}
+                      {docStatus === 'MENUNGGU_TTD_DOSEN' && 'Menunggu TTD Dosen'}
+                      {docStatus === 'MENUNGGU_PROSES_ADMIN' && 'Menunggu Proses Admin'}
+                    </span>
                   </div>
-                </dl>
-              </div>
-            )}
-          </div>
-        )}
+
+                  {/* Document info */}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <InfoItem icon={FileText} label="Jenis Surat" value={result.document.jenis} />
+                    <InfoItem icon={Hash} label="Kode Dokumen" value={result.document.code} />
+                    <InfoItem icon={Clock} label="Tanggal Dibuat" value={formatDate(result.document.created_at)} />
+                    <InfoItem icon={CheckCircle} label="Tanggal Selesai" value={formatDate(result.document.completed_at)} />
+                  </div>
+
+                  {result.document.keperluan && (
+                    <div className="p-3 bg-ivory border border-sepia-200 rounded-sm">
+                      <p className="text-xs text-primary/50 mb-1">Keperluan</p>
+                      <p className="text-sm text-primary">{result.document.keperluan}</p>
+                    </div>
+                  )}
+
+                  {result.document.internal_fields && Object.keys(result.document.internal_fields).length > 0 && (
+                    <div className="p-4 bg-white border border-sepia-200 rounded-sm">
+                      <h3 className="text-sm font-serif font-semibold text-primary mb-3">Data Spesifik Surat</h3>
+                      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-4">
+                        {Object.entries(result.document.internal_fields).map(([k, v]) => {
+                          if (k.endsWith('_nip')) return null; // Hide redundant NIP fields
+                          return (
+                            <div key={k} className={v.length > 50 ? "sm:col-span-2" : ""}>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-primary/40 mb-0.5">{k.replace(/_/g, ' ')}</p>
+                              <p className="text-sm text-primary break-words">{v}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Signers timeline */}
+                  {uniqueSigners.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-serif font-semibold text-primary mb-4 flex items-center gap-2"><User size={14} /> Penanda Tangan</h3>
+                      <div className="space-y-0">
+                        {uniqueSigners.map((signer, i) => (
+                          <div key={i} className="flex gap-4">
+                            {/* Timeline line */}
+                            <div className="flex flex-col items-center">
+                              <div className={`w-3 h-3 rounded-full border-2 shrink-0 ${signer.is_signed ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-sepia-200'}`} />
+                              {i < uniqueSigners.length - 1 && <div className="w-px flex-1 bg-sepia-200 my-1" />}
+                            </div>
+                            {/* Content */}
+                            <div className="pb-5 -mt-0.5">
+                              <p className="text-sm font-medium text-primary">{signer.name}</p>
+                              <p className="text-xs text-primary/50">{signer.role}{signer.nip ? ` · ${signer.nip}` : ''}</p>
+                              {signer.signed_at && <p className="text-xs text-emerald-600 mt-1">{formatDate(signer.signed_at)}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hash */}
+                  <div className="p-3 bg-ivory border border-sepia-200 rounded-sm">
+                    <p className="text-xs text-primary/50 mb-1">Document Hash (SHA-256)</p>
+                    <p className="text-xs font-mono text-primary/70 break-all">{result.document_hash}</p>
+                  </div>
+
+                  {/* Download Button (Only for Completed/Valid Documents) */}
+                  {statusType === 'valid' && (
+                    <div className="pt-2">
+                      <a
+                        href={`${api.defaults.baseURL || 'http://127.0.0.1:8000'}/api/verify/download/${encodeURIComponent(result.document_hash || hash)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-sm transition-all shadow-sm cursor-pointer hover:shadow-md active:scale-[0.98]"
+                        download
+                      >
+                        <Download size={16} />
+                        Unduh PDF Resmi Terverifikasi
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+function InfoItem({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-3 p-3 bg-ivory/60 rounded-sm">
+      <Icon size={14} className="text-primary/40 mt-0.5 shrink-0" />
+      <div>
+        <p className="text-[11px] text-primary/40 uppercase tracking-wider">{label}</p>
+        <p className="text-sm text-primary font-medium mt-0.5">{value || '-'}</p>
       </div>
     </div>
   );

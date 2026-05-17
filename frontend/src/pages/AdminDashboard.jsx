@@ -59,27 +59,7 @@ export default function AdminDashboard() {
     return items;
   }, [pending, search, sortBy]);
 
-  const handleApprove = async (id) => {
-    try {
-      await api.post('/api/surat/' + id + '/approve');
-      toast.success('Persetujuan berhasil');
-      load();
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Gagal menyetujui'));
-    }
-  };
 
-  const handleReject = async (id) => {
-    const reason = prompt('Alasan penolakan:');
-    if (!reason) return;
-    try {
-      await api.post('/api/surat/' + id + '/reject', { reason });
-      toast.success('Surat ditolak');
-      load();
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Gagal menolak'));
-    }
-  };
 
   if (loading) return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -179,13 +159,20 @@ export default function AdminDashboard() {
                     </td>
                     <td className="py-5 px-6 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => handleApprove(s.id)} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
-                          Setujui
+                        <button onClick={() => {
+                          const token = localStorage.getItem('token') || '';
+                          const url = `http://127.0.0.1:8000/api/surat/${s.id}/pdf?token=${encodeURIComponent(token)}`;
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `surat-${s.id}.pdf`;
+                          link.target = '_blank';
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white flex items-center gap-1">
+                          Unduh PDF
                         </button>
-                        <button onClick={() => handleReject(s.id)} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-red-700 hover:border-red-700 hover:bg-red-50 transition-colors rounded-sm">
-                          Tolak
-                        </button>
-                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
+                        <Link to={`/surat/${s.id}`} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
                           Detail
                         </Link>
                       </div>

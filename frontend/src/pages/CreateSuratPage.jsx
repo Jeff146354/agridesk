@@ -1,9 +1,71 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api';
 import { getErrorMessage } from '../utils/error';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
+
+function CustomFormDropdown({ value, onChange, placeholder, options }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.value === value) || null;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 bg-ivory border border-sepia-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary rounded-sm transition-all text-sm cursor-pointer flex justify-between items-center text-left"
+      >
+        <span className={selectedOption ? 'text-primary' : 'text-primary/40'}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={16} className={`text-primary/60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Click outside backdrop */}
+            <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+            
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute left-0 right-0 mt-1.5 bg-white border border-sepia-200 rounded-sm shadow-lg max-h-60 overflow-y-auto z-20"
+            >
+              <ul className="py-1">
+                {options.map((option) => (
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }}
+                      className={`w-full px-4 py-2.5 text-left text-sm transition-colors flex items-center justify-between
+                        ${value === option.value 
+                          ? 'bg-primary text-white font-medium' 
+                          : 'text-primary/80 hover:bg-ivory hover:text-primary'
+                        }`}
+                    >
+                      <span>{option.label}</span>
+                      {value === option.value && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const FIELD_LABELS = {
   nama_mata_kuliah: 'Nama Mata Kuliah',
@@ -63,39 +125,42 @@ function LecturerSearchField({
     <div>
       <label className="block text-sm font-medium text-primary mb-2">{label}</label>
       <p className="text-xs text-primary/60 mb-3">{helperText}</p>
-      <div className="relative">
-        <input
-          type="text"
-          className="appearance-none block w-full px-4 py-3 bg-ivory border border-sepia-200 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm transition-colors"
-          placeholder={placeholder}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      {!selectedLecturer ? (
+        <div className="relative">
+          <input
+            type="text"
+            className="appearance-none block w-full px-4 py-3 bg-ivory border border-sepia-200 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm transition-colors"
+            placeholder={placeholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
 
-        {query.trim() && (
-          <div className="absolute z-10 mt-1 w-full bg-white border border-sepia-200 shadow-lg max-h-60 rounded-sm py-1 overflow-auto sm:text-sm">
-            {loading && <div className="px-4 py-3 text-sm text-primary/50 italic">Mencari dosen...</div>}
-            {!loading && options.length === 0 && (
-              <div className="px-4 py-3 text-sm text-primary/50 italic">Dosen tidak ditemukan</div>
-            )}
-            {!loading && options.map((lecturer) => (
-              <button
-                key={lecturer.id}
-                type="button"
-                className="w-full text-left px-4 py-3 hover:bg-ivory focus:bg-ivory focus:outline-none transition-colors border-b border-sepia-200/50 last:border-0"
-                onClick={() => chooseLecturer(lecturer)}
-              >
-                <div className="font-medium text-primary">{lecturer.name}</div>
-                <div className="text-xs text-primary/60 mt-0.5">{lecturer.nip || '-'} &middot; {lecturer.email}</div>
-              </button>
-            ))}
+          {query.trim() && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-sepia-200 shadow-lg max-h-60 rounded-sm py-1 overflow-auto sm:text-sm">
+              {loading && <div className="px-4 py-3 text-sm text-primary/50 italic">Mencari dosen...</div>}
+              {!loading && options.length === 0 && (
+                <div className="px-4 py-3 text-sm text-primary/50 italic">Dosen tidak ditemukan</div>
+              )}
+              {!loading && options.map((lecturer) => (
+                <button
+                  key={lecturer.id}
+                  type="button"
+                  className="w-full text-left px-4 py-3 hover:bg-ivory focus:bg-ivory focus:outline-none transition-colors border-b border-sepia-200/50 last:border-0"
+                  onClick={() => chooseLecturer(lecturer)}
+                >
+                  <div className="font-medium text-primary">{lecturer.name}</div>
+                  <div className="text-xs text-primary/60 mt-0.5">{lecturer.nip || '-'} &middot; {lecturer.email}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center justify-between w-full px-4 py-3 bg-white border border-primary/20 rounded-sm shadow-sm">
+          <div>
+            <div className="text-sm font-medium text-primary">{selectedLecturer.name}</div>
+            <div className="text-xs text-primary/60">{selectedLecturer.nip || '-'}</div>
           </div>
-        )}
-      </div>
-
-      {selectedLecturer && (
-        <div className="mt-3 inline-flex items-center px-3 py-1.5 border border-sepia-200 bg-white text-primary rounded-sm text-xs font-medium shadow-sm">
-          {selectedLecturer.name}
           <button
             type="button"
             onClick={() => {
@@ -103,9 +168,12 @@ function LecturerSearchField({
               setQuery('');
               setOptions([]);
             }}
-            className="ml-2 shrink-0 h-4 w-4 inline-flex items-center justify-center text-primary/40 hover:text-red-600 transition-colors focus:outline-none"
+            className="shrink-0 ml-4 p-1 text-primary/40 hover:text-red-600 transition-colors focus:outline-none"
+            title="Hapus dosen"
           >
-            &times;
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
       )}
@@ -196,15 +264,7 @@ export default function CreateSuratPage() {
     setSelectedLecturers((prev) => prev.filter((item) => item.id !== lecturerId));
   };
 
-  const deriveKeperluanFromFields = () => {
-    if (internalFields.alasan_pembatalan_kuliah?.trim()) {
-      return internalFields.alasan_pembatalan_kuliah.trim();
-    }
-    if (internalFields.nama_mata_kuliah?.trim()) {
-      return `Pembatalan mata kuliah ${internalFields.nama_mata_kuliah.trim()}`;
-    }
-    return 'Pengajuan surat internal';
-  };
+
 
   const buildInternalPayload = () => {
     if (!selectedTemplate) {
@@ -222,6 +282,7 @@ export default function CreateSuratPage() {
           throw new Error(`Field ${FIELD_LABELS[key]} wajib dipilih`);
         }
         normalizedFields[key] = lecturer.name;
+        normalizedFields[`${key}_nip`] = lecturer.nip;
         lecturerIds.push(lecturer.id);
         continue;
       }
@@ -235,7 +296,7 @@ export default function CreateSuratPage() {
 
     return {
       jenis: selectedTemplate.name,
-      keperluan: deriveKeperluanFromFields(),
+      keperluan: keperluan.trim() || 'Pengajuan Surat Akademik',
       fields: normalizedFields,
       lecturer_ids: lecturerIds.length ? lecturerIds : null,
     };
@@ -361,6 +422,30 @@ export default function CreateSuratPage() {
                   required
                   placeholder="Jelaskan alasan pembatalan secara singkat dan jelas"
                 />
+              ) : fieldKey === 'semester' ? (
+                <CustomFormDropdown
+                  placeholder="Pilih Semester"
+                  value={internalFields[fieldKey] || ''}
+                  onChange={(val) => setInternalFields((prev) => ({ ...prev, [fieldKey]: val }))}
+                  options={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(sem => ({
+                    value: sem.toString(),
+                    label: `Semester ${sem}`
+                  }))}
+                />
+              ) : fieldKey === 'tahun_akademik' ? (
+                <CustomFormDropdown
+                  placeholder="Pilih Tahun Akademik"
+                  value={internalFields[fieldKey] || ''}
+                  onChange={(val) => setInternalFields((prev) => ({ ...prev, [fieldKey]: val }))}
+                  options={[
+                    { value: '2023/2024 Ganjil', label: '2023/2024 Ganjil' },
+                    { value: '2023/2024 Genap', label: '2023/2024 Genap' },
+                    { value: '2024/2025 Ganjil', label: '2024/2025 Ganjil' },
+                    { value: '2024/2025 Genap', label: '2024/2025 Genap' },
+                    { value: '2025/2026 Ganjil', label: '2025/2026 Ganjil' },
+                    { value: '2025/2026 Genap', label: '2025/2026 Genap' }
+                  ]}
+                />
               ) : (
                 <input
                   type="text"
@@ -368,7 +453,6 @@ export default function CreateSuratPage() {
                   value={internalFields[fieldKey] || ''}
                   onChange={(e) => setInternalFields((prev) => ({ ...prev, [fieldKey]: e.target.value }))}
                   required
-                  placeholder={fieldKey === 'semester' ? 'Contoh: 4' : fieldKey === 'tahun_akademik' ? 'Contoh: 2024/2025 Genap' : ''}
                 />
               )}
             </div>
@@ -420,8 +504,8 @@ export default function CreateSuratPage() {
           </button>
           <button
             type="button"
-            className={`flex-1 py-4 px-6 text-sm font-medium text-center transition-colors border-b-2 ${mode === 'external' ? 'bg-white text-primary border-primary' : 'text-primary/50 hover:text-primary hover:bg-white/50 border-transparent'}`}
-            onClick={() => setMode('external')}
+            className="flex-1 py-4 px-6 text-sm font-medium text-center transition-colors border-b-2 text-primary/50 hover:text-primary hover:bg-white/50 border-transparent flex items-center justify-center gap-2"
+            onClick={() => navigate('/surat/new/external')}
           >
             Eksternal (Upload PDF)
           </button>
@@ -468,6 +552,18 @@ export default function CreateSuratPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-base font-serif text-primary mb-4 mt-6">Uraian Keperluan</label>
+                <textarea
+                  rows={2}
+                  className="appearance-none block w-full px-4 py-3 bg-ivory border border-sepia-200 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm transition-colors"
+                  value={keperluan}
+                  onChange={(e) => setKeperluan(e.target.value)}
+                  placeholder="Deskripsi singkat keperluan surat secara umum (misal: Persyaratan administrasi...)"
+                  required
+                />
               </div>
 
               {renderPembatalanFields()}

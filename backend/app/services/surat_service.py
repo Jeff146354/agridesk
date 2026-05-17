@@ -1,4 +1,5 @@
-from typing import List, Optional
+import os
+from typing import List, Optional, Dict, Any
 
 from sqlalchemy.orm import Session
 
@@ -77,8 +78,11 @@ class SuratService:
             **fields,
         }
 
+        import uuid
         # Generate PDF from template
-        filename = f"surat_{jenis}_{mahasiswa_id}.pdf"
+        unique_id = uuid.uuid4().hex[:8]
+        safe_jenis = jenis.replace(" ", "_")
+        filename = f"surat_{safe_jenis}_{mahasiswa_id}_{unique_id}.pdf"
         pdf_path = PDFGenerator.generate_from_template(
             jenis,
             enriched_fields,
@@ -102,11 +106,67 @@ class SuratService:
 
         surat = self.surat_repo.create(surat)
 
-        # Create signature placeholders for lecturers
-        if lecturer_ids:
-            for lid in lecturer_ids:
-                sig = Signature(surat_id=surat.id, owner_id=lid, role=UserRole.DOSEN)
-                self.signature_repo.create(sig)
+        from app.models.surat import SuratModel
+        from app.utils.hash_generator import HashGenerator
+
+        # Apply specific logic for Pembatalan Mata Kuliah
+        if jenis == "Surat Pembatalan Mata Kuliah":
+            surat_model = self.db.query(SuratModel).filter(SuratModel.id == surat.id).first()
+            if surat_model:
+                surat_model.is_sequential = True
+                self.db.commit()
+
+            # Create Mahasiswa Signature
+            sig_mhs = Signature(
+                surat_id=surat.id,
+                owner_id=mahasiswa_id,
+                role=UserRole.MAHASISWA,
+                page_number=1,
+                pos_x=500.0,
+                pos_y=780.0,
+                pos_width=150.0,
+                pos_height=80.0,
+                signing_order=0,
+            )
+            # Instantly sign for Mahasiswa
+            sig_hash = HashGenerator.generate_hash(f"{surat.id}:{mahasiswa_id}:MAHASISWA")
+            sig_mhs.sign(mahasiswa.signature_image_path, sig_hash)
+            self.signature_repo.create(sig_mhs)
+
+            if lecturer_ids and len(lecturer_ids) >= 2:
+                # Dosen Pembimbing
+                sig_pembimbing = Signature(
+                    surat_id=surat.id,
+                    owner_id=lecturer_ids[0],
+                    role=UserRole.DOSEN,
+                    page_number=1,
+                    pos_x=50.0,
+                    pos_y=780.0,
+                    pos_width=150.0,
+                    pos_height=80.0,
+                    signing_order=1,
+                )
+                self.signature_repo.create(sig_pembimbing)
+
+                # Kaprodi
+                sig_kaprodi = Signature(
+                    surat_id=surat.id,
+                    owner_id=lecturer_ids[1],
+                    role=UserRole.DOSEN,
+                    page_number=1,
+                    pos_x=275.0,
+                    pos_y=780.0,
+                    pos_width=150.0,
+                    pos_height=80.0,
+                    signing_order=2,
+                )
+                self.signature_repo.create(sig_kaprodi)
+        else:
+            # Fallback for other internal templates
+            if lecturer_ids:
+                for lid in lecturer_ids:
+                    sig = Signature(surat_id=surat.id, owner_id=lid, role=UserRole.DOSEN)
+                    self.signature_repo.create(sig)
 
         self._log("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat)
         return surat
@@ -117,8 +177,21 @@ class SuratService:
         jenis: str,
         keperluan: str,
         file_path: str,
+        signer_configs: Optional[List[Dict[str, Any]]] = None,
+        is_sequential: bool = False,
+        # Legacy fallback
         lecturer_ids: Optional[List[int]] = None,
     ) -> Surat:
+        """Create an external letter with optional rich signer configuration.
+
+        signer_configs: list of dicts with keys:
+            - user_id (int)
+            - role (str: "DOSEN" | "MAHASISWA" | "ADMIN")
+            - signing_order (int | None)
+            - page_number (int, default 1)
+            - pos_x, pos_y, pos_width, pos_height (float | None)
+            - owner_email (str | None)
+        """
         surat = Surat(
             mahasiswa_id=mahasiswa_id,
             jenis=jenis,
@@ -127,18 +200,79 @@ class SuratService:
             file_path=file_path,
         )
 
-        if lecturer_ids:
+        has_signers = bool(signer_configs) or bool(lecturer_ids)
+        if has_signers:
             surat.submit(has_lecturer_signatures=True)
 
         surat = self.surat_repo.create(surat)
 
-        if lecturer_ids:
+        # Update is_sequential flag directly on the DB model
+        if is_sequential and surat.id:
+            from app.models.surat import SuratModel
+            db_model = self.db.query(SuratModel).filter(SuratModel.id == surat.id).first()
+            if db_model:
+                db_model.is_sequential = is_sequential
+                self.db.commit()
+
+        # Create signature records from rich signer_configs
+        if signer_configs:
+            for cfg in signer_configs:
+                user_id = cfg.get("user_id")
+                if not user_id:
+                    continue
+                user = self.user_repo.get_by_id(user_id)
+                if not user:
+                    continue
+                role = UserRole(cfg.get("role", user.role.value))
+                sig = Signature(
+                    surat_id=surat.id,
+                    owner_id=user_id,
+                    role=role,
+                    signing_order=cfg.get("signing_order"),
+                    page_number=cfg.get("page_number", 1),
+                    pos_x=cfg.get("pos_x"),
+                    pos_y=cfg.get("pos_y"),
+                    pos_width=cfg.get("pos_width"),
+                    pos_height=cfg.get("pos_height"),
+                    owner_email=cfg.get("owner_email") or user.email,
+                )
+
+                # Auto-sign if this signer is the mahasiswa who created the letter
+                if user_id == mahasiswa_id:
+                    sig_hash = HashGenerator.generate_hash(
+                        f"{surat.id}:{mahasiswa_id}:{role.value}"
+                    )
+                    sig.sign(
+                        user.signature_image_path or "",
+                        sig_hash,
+                    )
+
+                self.signature_repo.create(sig)
+        elif lecturer_ids:
+            # Legacy support
             for lid in lecturer_ids:
                 sig = Signature(surat_id=surat.id, owner_id=lid, role=UserRole.DOSEN)
                 self.signature_repo.create(sig)
 
         self._log("SURAT_CREATED", mahasiswa_id, UserRole.MAHASISWA.value, surat)
         return surat
+
+    # ------------------------------------------------------------------
+    # PDF utilities
+    # ------------------------------------------------------------------
+
+    def get_page_count(self, surat_id: int, user_id: int, user_role: UserRole) -> int:
+        """Return the number of pages in the uploaded PDF."""
+        surat = self.get_surat_with_access_check(surat_id, user_id, user_role)
+        pdf_path = surat.file_path or surat.pdf_path
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise EntityNotFoundError("File PDF tidak ditemukan")
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(pdf_path)
+            return len(reader.pages)
+        except Exception:
+            return 1
 
     # ------------------------------------------------------------------
     # Workflow transitions
@@ -170,13 +304,12 @@ class SuratService:
 
         source_pdf = surat.pdf_path or surat.file_path or ""
         final_filename = f"final_{surat.id}.pdf"
-        signed_images = [
-            s.image_path
-            for s in self.signature_repo.get_by_surat_id(surat.id)
-            if s.is_signed() and s.image_path
-        ]
+        signatures = self.signature_repo.get_by_surat_id(surat.id)
         final_pdf_path = PDFGenerator.generate_final_pdf(
-            source_pdf, qr_path, final_filename, signature_paths=signed_images,
+            source_pdf, qr_path, final_filename,
+            signatures=signatures,
+            is_external=surat.is_external,
+            document_hash=document_hash,
         )
 
         # Domain transition — validates state machine
@@ -206,6 +339,16 @@ class SuratService:
             )
             if not is_pending_assignee:
                 raise UnauthorizedError("Surat ini bukan pending tanda tangan Anda")
+
+            # Enforce sequential order for rejection too
+            from app.models.surat import SuratModel as SM
+            surat_model = self.db.query(SM).filter(SM.id == surat_id).first()
+            if surat_model and surat_model.is_sequential:
+                next_signers = self.signature_repo.get_next_to_sign(surat_id, True)
+                if not any(s.owner_id == actor_id for s in next_signers):
+                    raise InvalidStateTransitionError(
+                        "Belum giliran Anda. Harap tunggu penanda tangan sebelumnya."
+                    )
 
         # Domain transition — validates reason and state machine
         surat.reject(reason)
@@ -278,3 +421,5 @@ class SuratService:
             target_id=surat.id,
             status=surat.status.value,
         )
+
+

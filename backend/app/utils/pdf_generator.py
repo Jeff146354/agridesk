@@ -34,10 +34,29 @@ class PDFGenerator:
         font_name: str = "Helvetica",
         font_size: float = 10.5,
         leading: float = 13,
+        justify: bool = False,
     ) -> float:
         pdf_canvas.setFont(font_name, font_size)
         current_y = y
-        for line in PDFGenerator._wrapped_lines(text, font_size, max_width):
+        lines = PDFGenerator._wrapped_lines(text, font_size, max_width)
+        for i, line in enumerate(lines):
+            if justify and i < len(lines) - 1 and " " in line:
+                # Don't justify lines that are artificially broken by newlines
+                text_width = pdf_canvas.stringWidth(line, font_name, font_size)
+                extra_space = max_width - text_width
+                words = line.split(" ")
+                num_gaps = len(words) - 1
+                
+                # Only justify if extra space is not absurdly large (e.g. half the line empty)
+                if num_gaps > 0 and extra_space < (max_width * 0.4):
+                    space_addition = extra_space / num_gaps
+                    word_x = x
+                    for word in words:
+                        pdf_canvas.drawString(word_x, current_y, word)
+                        word_x += pdf_canvas.stringWidth(word + " ", font_name, font_size) + space_addition
+                    current_y -= leading
+                    continue
+
             pdf_canvas.drawString(x, current_y, line)
             current_y -= leading
         return current_y
@@ -173,7 +192,7 @@ class PDFGenerator:
 
             info_rows = [
                 ("Nama", fields.get("nama", "-")),
-                ("NRP", fields.get("nim", "-")),
+                ("NIM", fields.get("nim", "-")),
                 ("Program Studi", "Ilmu Komputer"),
             ]
             info_table = Table(
@@ -229,33 +248,7 @@ class PDFGenerator:
             y -= course_height + 14
 
             y = PDFGenerator._draw_paragraph(pdf_canvas, "dengan alasan :", left, y, body_width) - 10
-            y = PDFGenerator._draw_paragraph(pdf_canvas, fields.get("alasan_pembatalan_kuliah", "-"), left + 0.55 * cm, y, body_width - 0.55 * cm, leading=15) - 12
-
-            lecturer_rows = [
-                ("Dosen Pembimbing", fields.get("dosen_pembimbing", "-")),
-                ("Ketua Program Studi Ilmu Komputer", fields.get("ketua_program_studi_ilmu_komputer", "-")),
-            ]
-            lecturer_table = Table(
-                [[label, ":", value] for label, value in lecturer_rows],
-                colWidths=[6.6 * cm, 0.45 * cm, body_width - 7.05 * cm],
-                hAlign="LEFT",
-            )
-            lecturer_table.setStyle(
-                TableStyle(
-                    [
-                        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                        ("FONTNAME", (2, 0), (2, -1), "Helvetica"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 11),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                        ("TOPPADDING", (0, 0), (-1, -1), 1),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ]
-                )
-            )
-            _, lecturer_height = lecturer_table.wrap(body_width, y)
-            lecturer_table.drawOn(pdf_canvas, left, y - lecturer_height)
-            y -= lecturer_height + 8
+            y = PDFGenerator._draw_paragraph(pdf_canvas, fields.get("alasan_pembatalan_kuliah", "-"), left + 0.55 * cm, y, body_width - 0.55 * cm, leading=15, justify=True) - 12
             return y
 
         y = PDFGenerator._draw_paragraph(
@@ -284,135 +277,37 @@ class PDFGenerator:
             pdf = canvas.Canvas(filepath, pagesize=A4)
             width, height = A4
 
-            if template_name == "Surat Pembatalan Mata Kuliah":
-                left = 2.1 * cm
-                body_width = width - 4.2 * cm
-
-                pdf.setFillColor(colors.black)
-                pdf.setFont("Helvetica-Bold", 13.5)
-                pdf.drawCentredString(width / 2, height - 2.0 * cm, "FORMULIR PEMBATALAN MATA KULIAH")
-
-                y = height - 3.5 * cm
-                y = PDFGenerator._draw_paragraph(pdf, "Saya yang bertanda tangan di bawah ini :", left, y, body_width) - 6
-
-                info_table = Table(
-                    [
-                        ["Nama", ":", fields.get("nama", "-")],
-                        ["NRP", ":", fields.get("nim", "-")],
-                        ["Program Studi", ":", "Ilmu Komputer"],
-                    ],
-                    colWidths=[4.4 * cm, 0.45 * cm, body_width - 4.85 * cm],
-                    hAlign="LEFT",
-                )
-                info_table.setStyle(
-                    TableStyle(
-                        [
-                            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                            ("FONTNAME", (2, 0), (2, -1), "Helvetica"),
-                            ("FONTSIZE", (0, 0), (-1, -1), 11),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                            ("TOPPADDING", (0, 0), (-1, -1), 1),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                        ]
-                    )
-                )
-                _, info_height = info_table.wrap(body_width, y)
-                info_table.drawOn(pdf, left, y - info_height)
-                y -= info_height + 12
-
-                y = PDFGenerator._draw_paragraph(pdf, "mengajukan pembatalan mata kuliah berikut :", left, y, body_width) - 8
-
-                course_table = Table(
-                    [
-                        ["Nama Mata Kuliah", ":", fields.get("nama_mata_kuliah", "-")],
-                        ["Kode Mata Kuliah", ":", fields.get("kode_mata_kuliah", "-")],
-                        ["Semester", ":", fields.get("semester", "-")],
-                        ["Tahun Akademik", ":", fields.get("tahun_akademik", "-")],
-                    ],
-                    colWidths=[4.4 * cm, 0.45 * cm, body_width - 4.85 * cm],
-                    hAlign="LEFT",
-                )
-                course_table.setStyle(
-                    TableStyle(
-                        [
-                            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                            ("FONTNAME", (2, 0), (2, -1), "Helvetica"),
-                            ("FONTSIZE", (0, 0), (-1, -1), 11),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                            ("TOPPADDING", (0, 0), (-1, -1), 1),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                        ]
-                    )
-                )
-                _, course_height = course_table.wrap(body_width, y)
-                course_table.drawOn(pdf, left, y - course_height)
-                y -= course_height + 12
-
-                y = PDFGenerator._draw_paragraph(pdf, "dengan alasan :", left, y, body_width) - 8
-                y = PDFGenerator._draw_paragraph(
-                    pdf,
-                    fields.get("alasan_pembatalan_kuliah", "-"),
-                    left + 0.55 * cm,
-                    y,
-                    body_width - 0.55 * cm,
-                    leading=15,
-                ) - 10
-
-                lecturer_table = Table(
-                    [
-                        ["Dosen Pembimbing", ":", fields.get("dosen_pembimbing", "-")],
-                        ["Ketua Program Studi Ilmu Komputer", ":", fields.get("ketua_program_studi_ilmu_komputer", "-")],
-                    ],
-                    colWidths=[6.7 * cm, 0.45 * cm, body_width - 7.15 * cm],
-                    hAlign="LEFT",
-                )
-                lecturer_table.setStyle(
-                    TableStyle(
-                        [
-                            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                            ("FONTNAME", (2, 0), (2, -1), "Helvetica"),
-                            ("FONTSIZE", (0, 0), (-1, -1), 11),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                            ("TOPPADDING", (0, 0), (-1, -1), 1),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                        ]
-                    )
-                )
-                _, lecturer_height = lecturer_table.wrap(body_width, y)
-                lecturer_table.drawOn(pdf, left, y - lecturer_height)
-
-                signature_x = width - 6.7 * cm
-                pdf.setFont("Helvetica", 10.8)
-                pdf.drawString(signature_x, 4.7 * cm, f"Bogor, {PDFGenerator._format_indonesian_date(datetime.now())}")
-                pdf.drawString(signature_x, 3.9 * cm, "Tertanda,")
-                pdf.drawString(signature_x, 2.05 * cm, fields.get("nama", "-"))
-                pdf.drawString(signature_x, 1.6 * cm, f"NRP. {fields.get('nim', '-')}")
-
-                pdf.save()
-                return filepath
 
             y = PDFGenerator._draw_header(pdf, width, height, template_name)
-
-            keperluan = fields.get("keperluan_surat_aktif") or fields.get("alasan_pembatalan_kuliah") or fields.get("keperluan") or "-"
-            y = PDFGenerator._draw_meta_box(pdf, width, y, template_name, keperluan)
+            
+            # Start the body slightly higher since we removed the meta box
+            y -= 1.0 * cm
+            
             y = PDFGenerator._render_internal_body(pdf, width, y, template_name, fields)
 
-            pdf.setFillColor(colors.HexColor("#6b7280"))
-            pdf.setFont("Helvetica", 8.5)
-            pdf.drawString(2.15 * cm, 1.85 * cm, f"Dicetak pada {PDFGenerator._format_indonesian_date(datetime.now())}")
-
             if template_name == "Surat Pembatalan Mata Kuliah":
-                right_x = width - 6.4 * cm
-                pdf.setFont("Helvetica", 11)
-                pdf.drawString(right_x, 5.4 * cm, f"Bogor, {PDFGenerator._format_indonesian_date(datetime.now())}")
-                pdf.drawString(right_x, 4.5 * cm, "Tertanda,")
-                pdf.drawString(right_x, 2.35 * cm, fields.get("nama", "-"))
-                pdf.drawString(right_x, 1.9 * cm, f"NRP. {fields.get('nim', '-')}")
+                pdf.setFont("Helvetica", 10.8)
 
-            PDFGenerator._draw_signature_block(pdf, width, y, signature_path)
+                left = 1.5 * cm
+                col1_x = left
+                pdf.drawString(col1_x, 7.3 * cm, "Mengetahui,")
+                pdf.drawString(col1_x, 6.5 * cm, "Dosen Pembimbing,")
+                pdf.drawString(col1_x, 3.7 * cm, fields.get("dosen_pembimbing", "-"))
+                pdf.drawString(col1_x, 3.2 * cm, f"NIP. {fields.get('dosen_pembimbing_nip', '-')}")
+
+                col2_x = 8.25 * cm
+                pdf.drawString(col2_x, 7.3 * cm, "Menyetujui,")
+                pdf.drawString(col2_x, 6.5 * cm, "Ketua Program Studi,")
+                pdf.drawString(col2_x, 3.7 * cm, fields.get("ketua_program_studi_ilmu_komputer", "-"))
+                pdf.drawString(col2_x, 3.2 * cm, f"NIP. {fields.get('ketua_program_studi_ilmu_komputer_nip', '-')}")
+
+                col3_x = width - 6.0 * cm
+                pdf.drawString(col3_x, 7.3 * cm, f"Bogor, {PDFGenerator._format_indonesian_date(datetime.now())}")
+                pdf.drawString(col3_x, 6.5 * cm, "Pemohon,")
+                pdf.drawString(col3_x, 3.7 * cm, fields.get("nama", "-"))
+                pdf.drawString(col3_x, 3.2 * cm, f"NIM. {fields.get('nim', '-')}")
+            else:
+                PDFGenerator._draw_signature_block(pdf, width, y, signature_path)
             pdf.save()
             return filepath
         except Exception as exc:
@@ -453,7 +348,9 @@ class PDFGenerator:
         pdf_path: str,
         qr_path: Optional[str],
         output_filename: str,
-        signature_paths: Optional[list[str]] = None,
+        signatures: Optional[list] = None,
+        is_external: bool = False,
+        document_hash: Optional[str] = None,
     ) -> str:
         try:
             pdf_dir = os.path.join(settings.UPLOAD_DIR, "pdfs", "final")
@@ -485,6 +382,108 @@ class PDFGenerator:
             for page in reader.pages:
                 writer.add_page(page)
 
+            # Group signatures by page (0-indexed)
+            sigs_by_page = {}
+            if signatures:
+                for sig in signatures:
+                    if sig.is_signed() and sig.image_path and sig.pos_x is not None and sig.pos_y is not None:
+                        pg = (sig.page_number or 1) - 1
+                        sigs_by_page.setdefault(pg, []).append(sig)
+
+            # Overlay signed signatures onto each page if present
+            for page_idx, page_sigs in sigs_by_page.items():
+                if page_idx >= len(writer.pages):
+                    continue
+                target_page = writer.pages[page_idx]
+                page_width = float(target_page.mediabox.width)
+                page_height = float(target_page.mediabox.height)
+
+                overlay_buf = BytesIO()
+                overlay = canvas.Canvas(overlay_buf, pagesize=(page_width, page_height))
+
+                for sig in page_sigs:
+                    if not sig.image_path or not os.path.exists(sig.image_path):
+                        continue
+                    
+                    # Convert from screen coordinates (top-left origin) to PDF coordinates (bottom-left origin)
+                    rendered_width = 700  # approximate rendered width in frontend wizard
+                    scale = page_width / rendered_width
+
+                    box_x = sig.pos_x * scale
+                    box_y = page_height - (sig.pos_y * scale) - (sig.pos_height * scale)
+                    box_w = sig.pos_width * scale
+                    box_h = sig.pos_height * scale
+
+                    pdf_w = box_w * 0.95
+                    pdf_h = box_h * 0.75
+                    pdf_x = box_x + (box_w - pdf_w) / 2
+                    pdf_y = box_y + (box_h - pdf_h) / 2
+
+                    try:
+                        # 1. Background & Border
+                        overlay.setFillColorRGB(1, 1, 1, 0.8)
+                        overlay.rect(pdf_x, pdf_y, pdf_w, pdf_h, fill=1, stroke=0)
+                        
+                        overlay.setStrokeColorRGB(0.2, 0.2, 0.2)
+                        overlay.setLineWidth(0.7)
+                        overlay.rect(pdf_x, pdf_y, pdf_w, pdf_h, fill=0, stroke=1)
+
+                        # 2. QR Code
+                        sig_qr_filename = f"sig_qr_{sig.id}.png"
+                        sig_qr_path = os.path.join(settings.UPLOAD_DIR, "qr_codes", sig_qr_filename)
+                        if not os.path.exists(sig_qr_path):
+                            url = f"/verify/{document_hash}" if document_hash else f"/verify-sig/{sig.signature_hash}"
+                            from app.utils.qr_generator import QRCodeGenerator
+                            QRCodeGenerator.generate_qr_code(url, sig_qr_filename)
+
+                        qr_padding = 4 * scale
+                        qr_size = pdf_h - (qr_padding * 2)
+                        qr_x = pdf_x + qr_padding
+                        qr_y = pdf_y + qr_padding
+
+                        if os.path.exists(sig_qr_path):
+                            overlay.drawImage(
+                                sig_qr_path, qr_x, qr_y,
+                                width=qr_size, height=qr_size,
+                                preserveAspectRatio=True, mask="auto"
+                            )
+
+                        # 3. Text label
+                        text_x = qr_x + qr_size + qr_padding
+                        text_y = pdf_y + pdf_h - (8 * scale)
+
+                        overlay.setFillColorRGB(0.2, 0.2, 0.2)
+                        overlay.setFont("Helvetica", 3.8 * scale)
+                        overlay.drawString(text_x, text_y, "Ditandatangani secara elektronik oleh:")
+
+                        overlay.setFont("Helvetica-Bold", 4.2 * scale)
+                        owner_name = (sig.owner_name or "Sistem Agridesk")[:25]
+                        overlay.drawString(text_x, text_y - (5.5 * scale), owner_name)
+
+                        # 4. Signature graphic
+                        sig_img_h = pdf_h - (18 * scale)
+                        sig_img_w = pdf_w - qr_size - (3 * qr_padding)
+                        sig_img_y = pdf_y + (4 * scale)
+                        overlay.drawImage(
+                            sig.image_path,
+                            text_x, sig_img_y,
+                            width=sig_img_w, height=sig_img_h,
+                            preserveAspectRatio=True, mask="auto"
+                        )
+
+                        # 5. Domain branding
+                        overlay.setFont("Helvetica", 3.5 * scale)
+                        overlay.drawRightString(pdf_x + pdf_w - (4 * scale), pdf_y + (3 * scale), "agridesk.ipb.ac.id")
+                    except Exception:
+                        pass
+
+                overlay.save()
+                overlay_buf.seek(0)
+                overlay_pdf = PdfReader(overlay_buf)
+                if overlay_pdf.pages:
+                    target_page.merge_page(overlay_pdf.pages[0])
+
+            # Now overlay the document master QR & SHA256 Hash onto the last page as final approval seal
             last_page = writer.pages[-1]
             page_width = float(last_page.mediabox.width)
             page_height = float(last_page.mediabox.height)
@@ -492,34 +491,28 @@ class PDFGenerator:
             overlay_bytes = BytesIO()
             overlay = canvas.Canvas(overlay_bytes, pagesize=(page_width, page_height))
 
+            footer_margin = 0.6 * cm
+            qr_size = 2.2 * cm
+
             if qr_path and os.path.exists(qr_path):
+                qr_x = page_width - footer_margin - qr_size
+                qr_y = footer_margin
                 overlay.drawImage(
                     qr_path,
-                    page_width - 6 * cm,
-                    2 * cm,
-                    width=4 * cm,
-                    height=4 * cm,
+                    qr_x,
+                    qr_y,
+                    width=qr_size,
+                    height=qr_size,
                     preserveAspectRatio=True,
                     mask="auto",
                 )
 
-            valid_signature_paths = [p for p in (signature_paths or []) if p and os.path.exists(p)]
-            sig_x = 2 * cm
-            sig_y = 2 * cm
-            for idx, sig_path in enumerate(valid_signature_paths):
-                if idx > 0:
-                    sig_x += 4.8 * cm
-                if sig_x + (4 * cm) > page_width - 7 * cm:
-                    break
-                overlay.drawImage(
-                    sig_path,
-                    sig_x,
-                    sig_y,
-                    width=4 * cm,
-                    height=2 * cm,
-                    preserveAspectRatio=True,
-                    mask="auto",
-                )
+            if document_hash:
+                overlay.setFillColor(colors.HexColor("#6b7280"))
+                overlay.setFont("Helvetica", 5)
+                hash_text = f"SHA256: {document_hash[:32]}..."
+                text_x = page_width - footer_margin - qr_size - 0.1 * cm
+                overlay.drawRightString(text_x, footer_margin + 0.15 * cm, hash_text)
 
             overlay.save()
             overlay_bytes.seek(0)

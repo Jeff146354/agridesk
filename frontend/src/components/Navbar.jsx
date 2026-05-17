@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api';
@@ -6,10 +6,15 @@ import api from '../api';
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationLoading, setNotificationLoading] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    const saved = localStorage.getItem(`agridesk_dismissed_${user?.id}`);
+    return saved ? JSON.parse(saved) : [];
+  });
   const notificationPanelRef = useRef(null);
 
   const handleLogout = () => {
@@ -47,7 +52,26 @@ export default function Navbar() {
     return () => clearInterval(interval);
   }, [user?.id]);
 
-  const unreadCount = useMemo(() => notifications.length, [notifications]);
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter(n => !dismissedIds.includes(n.id));
+  }, [notifications, dismissedIds]);
+
+  const unreadCount = useMemo(() => visibleNotifications.length, [visibleNotifications]);
+
+  const handleDismiss = (e, id) => {
+    e.stopPropagation();
+    const newDismissed = [...dismissedIds, id];
+    setDismissedIds(newDismissed);
+    localStorage.setItem(`agridesk_dismissed_${user?.id}`, JSON.stringify(newDismissed));
+  };
+
+  const handleDismissAll = (e) => {
+    e.stopPropagation();
+    const idsToDismiss = notifications.map(n => n.id);
+    const newDismissed = [...new Set([...dismissedIds, ...idsToDismiss])];
+    setDismissedIds(newDismissed);
+    localStorage.setItem(`agridesk_dismissed_${user?.id}`, JSON.stringify(newDismissed));
+  };
 
   const formatTime = (value) => {
     if (!value) return '';
@@ -68,7 +92,40 @@ export default function Navbar() {
         : 'border-transparent text-primary/70 hover:text-primary hover:border-primary/30'
     }`;
 
-  if (!user) return null;
+  // Public Navbar
+  if (!user) {
+    const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+    if (isAuthPage) return null;
+
+    return (
+      <nav className="bg-ivory border-b border-sepia-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-20">
+            {/* Logo */}
+            <div className="shrink-0 flex items-center gap-3">
+              <div className="w-8 h-8 bg-primary text-white flex items-center justify-center font-serif text-lg font-bold rounded-sm">A</div>
+              <div>
+                <h1 className="font-serif font-bold text-lg leading-none text-primary">Agridesk</h1>
+                <p className="text-[10px] tracking-widest text-primary/60 mt-0.5 uppercase">Ilmu Komputer</p>
+              </div>
+            </div>
+
+            {/* Public Links */}
+            <div className="flex items-center h-full space-x-2">
+              <NavLink to="/verify" className={navLinkClass}>Verifikasi</NavLink>
+            </div>
+
+            {/* Login Link */}
+            <div className="flex items-center">
+              <NavLink to="/login" className="text-sm font-medium text-primary hover:text-primary/70 transition-colors">
+                Login
+              </NavLink>
+            </div>
+          </div>
+        </div>
+      </nav>
+    );
+  }
 
   // Initials for avatar (must be after null guard)
   const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -89,6 +146,7 @@ export default function Navbar() {
 
           {/* Center Nav Links */}
           <div className="hidden md:flex items-center h-full space-x-2">
+            <NavLink to="/verify" className={navLinkClass}>Verifikasi</NavLink>
             {user.role === 'MAHASISWA' && (
               <>
                 <NavLink to="/" className={navLinkClass}>Surat Saya</NavLink>
@@ -137,34 +195,52 @@ export default function Navbar() {
                     <p className="text-sm font-medium text-primary">Notifikasi</p>
                     <p className="text-xs text-primary/60">Status surat dan tanda tangan terbaru</p>
                   </div>
+                  {visibleNotifications.length > 0 && (
+                    <button 
+                      onClick={handleDismissAll}
+                      className="text-[10px] uppercase tracking-wider text-primary/50 hover:text-primary transition-colors font-medium"
+                    >
+                      Bersihkan
+                    </button>
+                  )}
                 </div>
                 <div className="max-h-96 overflow-auto">
                   {notificationLoading ? (
                     <div className="px-4 py-6 text-sm text-primary/50 italic">Memuat notifikasi...</div>
-                  ) : notifications.length === 0 ? (
+                  ) : visibleNotifications.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-primary/50 italic">Belum ada notifikasi baru.</div>
                   ) : (
-                    notifications.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setIsNotificationOpen(false);
-                          if (item.link) navigate(item.link);
-                        }}
-                        className="w-full text-left px-4 py-3 border-b border-sepia-200/70 hover:bg-ivory transition-colors last:border-0"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-1 w-2.5 h-2.5 rounded-full bg-primary/40 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-primary">{item.title}</p>
-                            <p className="text-xs text-primary/70 mt-1 leading-relaxed">{item.message}</p>
-                            <p className="text-[10px] tracking-wide uppercase text-primary/40 mt-2">
-                              {item.source_event}{item.created_at ? ` · ${formatTime(item.created_at)}` : ''}
-                            </p>
+                    visibleNotifications.map((item) => (
+                      <div key={item.id} className="relative group border-b border-sepia-200/70 last:border-0 hover:bg-ivory transition-colors">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsNotificationOpen(false);
+                            if (item.link) navigate(item.link);
+                          }}
+                          className="w-full text-left px-4 py-3 pr-10"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="mt-1 w-2.5 h-2.5 rounded-full bg-primary/40 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-primary">{item.title}</p>
+                              <p className="text-xs text-primary/70 mt-1 leading-relaxed">{item.message}</p>
+                              <p className="text-[10px] tracking-wide uppercase text-primary/40 mt-2">
+                                {item.source_event}{item.created_at ? ` · ${formatTime(item.created_at)}` : ''}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => handleDismiss(e, item.id)}
+                          className="absolute right-3 top-3 p-1.5 text-primary/30 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-sm"
+                          aria-label="Tutup notifikasi"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
                     ))
                   )}
                 </div>
@@ -208,6 +284,7 @@ export default function Navbar() {
       {isOpen && (
         <div className="md:hidden bg-ivory border-t border-sepia-200">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+             <NavLink to="/verify" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-primary hover:bg-sepia-200 rounded-md">Verifikasi</NavLink>
              {user.role === 'MAHASISWA' && (
               <>
                 <NavLink to="/" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-primary hover:bg-sepia-200 rounded-md">Surat Saya</NavLink>

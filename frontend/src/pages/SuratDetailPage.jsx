@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import { getErrorMessage } from '../utils/error';
 import { toast } from 'sonner';
+import { Copy, ShieldCheck } from 'lucide-react';
 
 const STATUS_LABEL = {
   DRAFT: 'Draft',
@@ -80,17 +81,46 @@ export default function SuratDetailPage() {
     }
   };
 
-  // Find the pending signature for this dosen
-  const myPendingSignature = user?.role === 'DOSEN'
-    ? signatures.find(s => s.owner_id === user.id && !s.signed_at)
-    : null;
+  // Find the pending signatures for this dosen (respecting sequential order)
+  const myPendingSignatures = (() => {
+    if (user?.role !== 'DOSEN' || !surat) return [];
+    const mySigs = signatures.filter(s => s.owner_id === user.id && !s.signed_at);
+    if (mySigs.length === 0) return [];
+    // If sequential, check if it's this dosen's turn
+    if (surat.is_sequential) {
+      const unsignedDosen = signatures.filter(s => !s.signed_at && s.role === 'DOSEN');
+      const minOrder = Math.min(...unsignedDosen.map(s => s.signing_order ?? Infinity));
+      return mySigs.filter(s => (s.signing_order ?? Infinity) <= minOrder);
+    }
+    return mySigs;
+  })();
 
   const handleDosenSign = async () => {
-    if (!myPendingSignature) return;
+    if (myPendingSignatures.length === 0) return;
     setActionLoading(true);
     try {
       const form = new FormData();
-      await api.post(`/api/signatures/lecturer/${myPendingSignature.id}/sign`, form);
+      
+      // Get ALL unsigned signatures owned by this user, sorted by signing order
+      const allMyUnsigned = signatures
+        .filter(s => s.owner_id === user.id && !s.signed_at)
+        .sort((a, b) => (a.signing_order ?? Infinity) - (b.signing_order ?? Infinity));
+
+      let signedCount = 0;
+      for (const sig of allMyUnsigned) {
+        try {
+          await api.post(`/api/signatures/lecturer/${sig.id}/sign`, form);
+          signedCount++;
+        } catch (err) {
+          const msg = getErrorMessage(err);
+          // If we hit a sequential block but already signed earlier slots, we just stop batching.
+          if (msg.toLowerCase().includes('belum giliran') && signedCount > 0) {
+            break;
+          }
+          throw err;
+        }
+      }
+
       toast.success('Surat berhasil ditandatangani');
       load();
     } catch (err) {
@@ -105,7 +135,7 @@ export default function SuratDetailPage() {
     }
   };
 
-  const handleDosenReject = async () => {
+  const handleReject = async () => {
     if (!rejectReason.trim()) {
       toast.warning('Isi alasan penolakan terlebih dahulu');
       return;
@@ -118,6 +148,19 @@ export default function SuratDetailPage() {
       load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Gagal menolak surat'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAdminApprove = async () => {
+    setActionLoading(true);
+    try {
+      await api.post(`/api/surat/${id}/approve`);
+      toast.success('Persetujuan berhasil');
+      load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Gagal menyetujui'));
     } finally {
       setActionLoading(false);
     }
@@ -147,14 +190,28 @@ export default function SuratDetailPage() {
   const year = surat.created_at ? new Date(surat.created_at).getFullYear() : new Date().getFullYear();
   const kodeSurat = `SR/${year}/${String(surat.id).padStart(4, '0')}`;
 
-  const signedCount = signatures.filter(s => s.signed_at).length;
+  // Group signatures by owner_id and role to prevent duplicate timeline entries
+  // when a single user has multiple signature fields.
+  const uniqueSignersMap = new Map();
+  signatures.forEach(sig => {
+    const key = `${sig.role}_${sig.owner_id}`;
+    if (!uniqueSignersMap.has(key)) {
+      uniqueSignersMap.set(key, sig);
+    }
+  });
+  const uniqueSigners = Array.from(uniqueSignersMap.values());
+
+  const signedCount = uniqueSigners.filter(s => s.signed_at).length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       
       {/* Header Section */}
       <div className="mb-12">
-        <button onClick={() => navigate(-1)} className="flex items-center text-xs tracking-widest text-primary/60 hover:text-primary uppercase mb-8 transition-colors">
+        <button onClick={() => {
+          const home = user?.role === 'DOSEN' ? '/dashboard/dosen' : user?.role === 'ADMIN' ? '/dashboard/admin' : '/dashboard/mahasiswa';
+          navigate(home);
+        }} className="flex items-center text-xs tracking-widest text-primary/60 hover:text-primary uppercase mb-8 transition-colors">
           <svg className="w-3 h-3 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
           Kembali
         </button>
@@ -181,20 +238,25 @@ export default function SuratDetailPage() {
             }`}>
               {STATUS_LABEL[surat.status]}
             </span>
-            {/* Lihat PDF button — tampil untuk semua role jika ada PDF */}
+            {/* Unduh PDF button */}
             {(surat.pdf_path || surat.file_path) && (
-              <Link
-                to={`/surat/${surat.id}/pdf`}
+              <button
+                onClick={() => {
+                  const token = localStorage.getItem('token') || '';
+                  const url = `http://127.0.0.1:8000/api/surat/${surat.id}/pdf?token=${encodeURIComponent(token)}`;
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `surat-${surat.id}.pdf`;
+                  link.target = '_blank';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
                 className="flex items-center gap-1.5 text-xs text-primary border border-sepia-200 hover:border-primary bg-white px-3 py-2 rounded-sm transition-colors mt-1"
               >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                Lihat PDF
-              </Link>
-            )}
-            {surat.status === 'SELESAI' && (
-              <Link to={`/surat/${surat.id}/pdf`} className="text-xs text-primary underline decoration-primary/30 hover:decoration-primary">
-                Unduh PDF Resmi
-              </Link>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                Unduh PDF
+              </button>
             )}
           </div>
         </div>
@@ -293,14 +355,45 @@ export default function SuratDetailPage() {
           {surat.document_hash && (
             <div className="bg-ivory border border-sepia-200 rounded-sm p-6 flex items-start gap-4">
               <div className="shrink-0 mt-1">
-                <svg className="w-5 h-5 text-primary/40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                <ShieldCheck className="w-5 h-5 text-primary/40" />
               </div>
-              <div>
-                <h4 className="text-xs font-bold tracking-widest text-primary/60 uppercase mb-1">Integritas Dokumen</h4>
-                <p className="text-xs text-primary/70 mb-2">Dokumen ini dilindungi kriptografi. Perubahan sekecil apapun akan merusak verifikasi.</p>
-                <div className="text-[10px] font-mono text-primary/50 bg-white/50 p-2 rounded border border-sepia-200 break-all">
-                  SHA256: {surat.document_hash}
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold tracking-widest text-primary/60 uppercase mb-1">Integritas Penerbitan</h4>
+                <p className="text-xs text-primary/70 mb-3">Sistem menjamin keaslian data penerbitan dokumen. Dokumen fisik dapat divalidasi silang menggunakan ID ini.</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 text-[10px] font-mono text-primary/50 bg-white/50 p-2 rounded border border-sepia-200 truncate" title={`SHA256: ${surat.document_hash}`}>
+                    SHA256: {surat.document_hash}
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(surat.document_hash);
+                      toast.success('Hash berhasil disalin!');
+                    }}
+                    className="shrink-0 p-2 text-primary/40 hover:text-primary hover:bg-sepia-200/50 rounded transition-colors"
+                    title="Salin Hash"
+                  >
+                    <Copy size={16} />
+                  </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Embedded PDF Preview */}
+          {(surat.pdf_path || surat.file_path) && (
+            <div className="bg-white border border-sepia-200 rounded-sm">
+              <div className="p-6 border-b border-sepia-200 flex justify-between items-center bg-ivory/30">
+                <h3 className="text-base font-serif text-primary">Pratinjau Dokumen</h3>
+                <span className="text-[10px] tracking-widest text-primary/50 uppercase">PDF</span>
+              </div>
+              <div className="p-0">
+                <iframe
+                  src={`http://127.0.0.1:8000/api/surat/${surat.id}/pdf?token=${encodeURIComponent(localStorage.getItem('token') || '')}`}
+                  title={`Pratinjau Dokumen Surat #${surat.id}`}
+                  className="w-full border-0"
+                  style={{ height: '700px' }}
+                  allow="fullscreen"
+                />
               </div>
             </div>
           )}
@@ -318,7 +411,7 @@ export default function SuratDetailPage() {
           )}
 
           {/* Actions for Dosen — tampil hanya jika ada pending signature milik dosen ini */}
-          {user.role === 'DOSEN' && myPendingSignature && surat.status === 'MENUNGGU_TTD_DOSEN' && (
+          {user.role === 'DOSEN' && myPendingSignatures.length > 0 && surat.status === 'MENUNGGU_TTD_DOSEN' && (
             <div className="bg-white border border-sepia-200 rounded-sm p-6">
               <p className="text-xs tracking-widest text-primary/50 uppercase mb-4">Tindakan Anda Diperlukan</p>
               <p className="text-sm text-primary/70 mb-6 leading-relaxed">
@@ -346,6 +439,36 @@ export default function SuratDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Actions for Admin */}
+          {user.role === 'ADMIN' && surat.status === 'MENUNGGU_PROSES_ADMIN' && (
+            <div className="bg-white border border-sepia-200 rounded-sm p-6">
+              <p className="text-xs tracking-widest text-primary/50 uppercase mb-4">Tindakan Anda Diperlukan</p>
+              <p className="text-sm text-primary/70 mb-6 leading-relaxed">
+                Surat ini menunggu pengesahan Anda. Tinjau isi surat sebelum menerbitkannya.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handleAdminApprove}
+                  disabled={actionLoading}
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-white hover:bg-primary-dark transition-colors text-sm font-medium rounded-sm disabled:opacity-60"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  {actionLoading ? 'Memproses...' : 'Setuju & Terbitkan'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRejectModal(true)}
+                  disabled={actionLoading}
+                  className="flex items-center gap-2 px-6 py-3 border border-red-200 text-red-700 hover:bg-red-50 transition-colors text-sm font-medium rounded-sm disabled:opacity-60"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  Tolak Pengajuan
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column - Timeline */}
@@ -356,17 +479,17 @@ export default function SuratDetailPage() {
               <div className="flex justify-between items-start gap-2">
                 <h3 className="text-base font-serif text-primary leading-tight">Alur Tanda Tangan</h3>
                 <span className="text-[10px] tracking-widest text-primary/50 uppercase whitespace-nowrap shrink-0">
-                  {signedCount} dari {signatures.length}
+                  {signedCount} dari {uniqueSigners.length}
                 </span>
               </div>
             </div>
             
             <div className="p-6">
-              {signatures.length === 0 ? (
+              {uniqueSigners.length === 0 ? (
                 <p className="text-sm text-primary/50 italic text-center py-4">Belum ada alur persetujuan.</p>
               ) : (
                 <div className="relative border-l border-sepia-200 ml-3 space-y-8">
-                  {signatures.map((sig, index) => {
+                  {uniqueSigners.map((sig, index) => {
                     const isSigned = !!sig.signed_at;
                     const isMe = user.role === 'DOSEN' && sig.owner_id === user.id;
                     return (
@@ -386,11 +509,11 @@ export default function SuratDetailPage() {
 
                         <div>
                           <p className="text-[10px] tracking-widest text-primary/50 uppercase mb-1">
-                            {sig.role === 'DOSEN' ? 'Dosen' : sig.role}
+                            {sig.role === 'DOSEN' ? 'Dosen' : sig.role === 'MAHASISWA' ? 'Mahasiswa' : sig.role}
                             {isMe && <span className="ml-1 text-amber-600 normal-case not-italic font-medium">(Anda)</span>}
                           </p>
                           <p className={`text-sm font-medium ${isSigned ? 'text-primary' : 'text-primary/70'}`}>
-                            {sig.role === 'DOSEN' ? (sig.owner_name || 'Dosen Pembimbing') : sig.role}
+                            {sig.owner_name || (sig.role === 'DOSEN' ? 'Dosen Pembimbing' : 'Penanda Tangan')}
                           </p>
                           
                           <div className="mt-2">
@@ -481,9 +604,9 @@ export default function SuratDetailPage() {
               </button>
               <button
                 type="button"
-                onClick={handleDosenReject}
                 disabled={actionLoading}
-                className="flex-1 py-3 bg-red-700 text-white hover:bg-red-800 transition-colors text-sm font-medium rounded-sm disabled:opacity-60"
+                onClick={handleReject}
+                className="px-6 py-2.5 bg-red-600 text-white hover:bg-red-700 transition-colors text-sm font-medium rounded-sm disabled:opacity-60"
               >
                 {actionLoading ? 'Memproses...' : 'Konfirmasi Tolak'}
               </button>

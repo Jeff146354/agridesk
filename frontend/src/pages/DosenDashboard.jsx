@@ -18,7 +18,14 @@ export default function DosenDashboard() {
     setLoading(true);
     api.get('/api/signatures/pending')
       .then((pendingRes) => {
-        setPending(pendingRes.data || []);
+        // Group by surat_id to prevent redundant list items when a Dosen has multiple signature fields for one surat
+        const uniqueItems = new Map();
+        (pendingRes.data || []).forEach(item => {
+          if (!uniqueItems.has(item.surat_id)) {
+            uniqueItems.set(item.surat_id, item);
+          }
+        });
+        setPending(Array.from(uniqueItems.values()));
       })
       .catch((err) => setError(getErrorMessage(err, 'Gagal memuat daftar antrean')))
       .finally(() => setLoading(false));
@@ -46,33 +53,7 @@ export default function DosenDashboard() {
     return items;
   }, [pending, search, sortBy]);
 
-  const handleSign = async (signatureId) => {
-    try {
-      const form = new FormData();
-      await api.post('/api/signatures/lecturer/' + signatureId + '/sign', form);
-      toast.success('Berhasil menandatangani dokumen');
-      load();
-    } catch (err) {
-      const message = getErrorMessage(err, 'Gagal menandatangani');
-      if (message.toLowerCase().includes('belum disimpan')) {
-        toast.warning('Simpan dulu tanda tangan Anda di menu Tanda Tangan');
-        return;
-      }
-      toast.error(message);
-    }
-  };
 
-  const handleReject = async (suratId) => {
-    const reason = prompt('Alasan penolakan:');
-    if (!reason || !reason.trim()) return;
-    try {
-      await api.post('/api/surat/' + suratId + '/reject', { reason: reason.trim() });
-      toast.success('Surat ditolak');
-      load();
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Gagal menolak surat'));
-    }
-  };
 
   if (loading) return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -174,13 +155,20 @@ export default function DosenDashboard() {
                     </td>
                     <td className="py-5 px-6 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => handleSign(sig.id)} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
-                          Setujui & TTD
+                        <button onClick={() => {
+                          const token = localStorage.getItem('token') || '';
+                          const url = `http://127.0.0.1:8000/api/surat/${sig.surat_id}/pdf?token=${encodeURIComponent(token)}`;
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `surat-${sig.surat_id}.pdf`;
+                          link.target = '_blank';
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white flex items-center gap-1">
+                          Unduh PDF
                         </button>
-                        <button onClick={() => handleReject(sig.surat_id)} className="text-xs font-medium px-4 py-1.5 border border-sepia-200 text-red-700 hover:border-red-700 hover:bg-red-50 transition-colors rounded-sm">
-                          Tolak
-                        </button>
-                        <Link to={`/surat/${sig.surat_id}`} className="text-xs font-medium px-3 py-1.5 border border-sepia-200 text-primary hover:border-primary transition-colors rounded-sm bg-ivory group-hover:bg-white">
+                        <Link to={`/surat/${sig.surat_id}`} className="text-xs font-medium px-4 py-1.5 bg-primary text-white hover:bg-primary-dark transition-colors rounded-sm">
                           Detail
                         </Link>
                       </div>
