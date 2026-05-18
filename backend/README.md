@@ -17,20 +17,29 @@ FastAPI backend for Agridesk (Academic Letter Workflow System).
 backend/
   app/
     controllers/    # HTTP routes (thin controllers)
-    services/       # Business logic
-    repositories/   # Data access
-    models/         # SQLAlchemy ORM models
+    services/       # Business logic orchestration
+    repositories/   # Data access (Domain <-> ORM mapping)
+    models/         # SQLAlchemy ORM models (Anemic data containers)
     schemas/        # Request/response schemas
-    domain/         # Enums and domain classes
+    domain/         # Rich Domain Models (State Machines, pure Python)
     utils/          # Security, uploads, PDF/QR/hash helpers
-    main.py         # FastAPI app entrypoint
+    main.py         # FastAPI app entrypoint & Global Exception Handler
     config.py       # Settings loader (.env)
     database.py     # DB engine/session/base
   alembic/          # DB migrations
-  tests/            # Service-level tests
+  tests/            # Service-level tests (In-Memory SQLite)
   .env.example
   requirements.txt
 ```
+
+## Architectural Principles
+
+Agridesk backend strictly adheres to Clean Architecture and Domain-Driven Design (DDD):
+- **Rich Domain Model & State Machine**: The `domain/` layer contains pure Python dataclasses (e.g., `Surat`). All business rules and status transitions (e.g., `DRAFT` -> `MENUNGGU_TTD_DOSEN`) are encapsulated within these models using strict Finite State Machines.
+- **Data Access Abstraction**: The `repositories/` layer acts as a two-way mapper. It translates raw SQLAlchemy ORM rows (`models/`) into pure `domain/` objects for the service layer, ensuring the business logic never leaks database implementation details.
+- **Exception Hierarchy**: All custom errors inherit from a base `AgrideskError`. A single global exception handler in `main.py` catches these and polymorphically returns structured HTTP JSON responses, maintaining the Open/Closed Principle.
+- **Cryptographic Signatures**: The system uses SHA-256 to hash finalized PDF binaries. The hash is embedded into a generated QR code and permanently flattened onto the physical PDF, creating a tamper-proof verification chain.
+
 
 ## Prerequisites
 
