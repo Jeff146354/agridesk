@@ -157,7 +157,7 @@ export default function DosenDashboard() {
                       <div className="flex justify-end gap-2">
                         <button onClick={() => {
                           const token = localStorage.getItem('token') || '';
-                          const url = `http://127.0.0.1:8000/api/surat/${sig.surat_id}/pdf?token=${encodeURIComponent(token)}`;
+                          const url = `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/surat/${sig.surat_id}/pdf?token=${encodeURIComponent(token)}`;
                           const link = document.createElement('a');
                           link.href = url;
                           link.download = `surat-${sig.surat_id}.pdf`;

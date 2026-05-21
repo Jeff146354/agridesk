@@ -243,7 +243,7 @@ export default function SuratDetailPage() {
               <button
                 onClick={() => {
                   const token = localStorage.getItem('token') || '';
-                  const url = `http://127.0.0.1:8000/api/surat/${surat.id}/pdf?token=${encodeURIComponent(token)}`;
+                  const url = `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/surat/${surat.id}/pdf?token=${encodeURIComponent(token)}`;
                   const link = document.createElement('a');
                   link.href = url;
                   link.download = `surat-${surat.id}.pdf`;
@@ -388,7 +388,7 @@ export default function SuratDetailPage() {
               </div>
               <div className="p-0">
                 <iframe
-                  src={`http://127.0.0.1:8000/api/surat/${surat.id}/pdf?token=${encodeURIComponent(localStorage.getItem('token') || '')}`}
+                  src={`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/surat/${surat.id}/pdf?token=${encodeURIComponent(localStorage.getItem('token') || '')}`}
                   title={`Pratinjau Dokumen Surat #${surat.id}`}
                   className="w-full border-0"
                   style={{ height: '700px' }}

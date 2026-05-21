@@ -6,7 +6,7 @@ export default function PdfViewerPage() {
   const { id } = useParams();
 
   const token = localStorage.getItem('token') || '';
-  const backendBase = 'http://127.0.0.1:8000';
+  const backendBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
   const pdfUrl = useMemo(
     () => `${backendBase}/api/surat/${id}/pdf?token=${encodeURIComponent(token)}`,
     [id, token]
