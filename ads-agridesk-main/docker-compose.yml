@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agridesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override DATABASE_URL to the Tailscale/external DB when needed
+      # DATABASE_URL is read from .env (100.65.114.94 Tailscale IP)
+
+      # Deployment public URL — used by QR code generator
+      - BASE_URL=https://drive.hq.idenx.id
+
+      # Use local filesystem storage (no MinIO/S3)
+      - USE_S3=false
+      - UPLOAD_DIR=uploads
+    volumes:
+      # Bind-mount to mini-pc disk so uploads persist across container restarts
+      - /disk/data-01/tristan/data-agd/uploads:/app/uploads
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # API base URL — frontend calls go through nginx /api proxy,
+        # so at build-time we leave this empty (relative URL).
+        # Nginx inside the frontend container handles /api → backend.
+        - VITE_API_BASE_URL=
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
