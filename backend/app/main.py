@@ -29,6 +29,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://mtf.idenx.id",
+        "https://drive.hq.idenx.id",
         # Allow same-origin requests coming through nginx proxy manager
         # (browser sends Origin matching the public domain)
         "http://localhost",
