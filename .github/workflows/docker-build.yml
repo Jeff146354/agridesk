@@ -29,7 +29,7 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/agridesk-backend:latest
+          tags: ghcr.io/jeff146354/agridesk-backend:latest
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -53,6 +53,6 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/agridesk-frontend:latest
+          tags: ghcr.io/jeff146354/agridesk-frontend:latest
           build-args: |
             VITE_API_BASE_URL=/api
