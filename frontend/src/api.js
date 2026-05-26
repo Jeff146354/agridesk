@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// In production the nginx container proxies /api/* to the backend service.
+// In local dev, Vite's proxy (vite.config.js) handles /api/* the same way.
+// VITE_API_BASE_URL can override this (e.g. for a standalone dev setup pointing at a remote backend).
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
 });
 
 api.interceptors.request.use((config) => {
